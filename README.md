@@ -5,8 +5,8 @@
 <h1 align="center"><a href="https://github.com/MarcelBruckner/trilium-mcp">Trilium ETAPI MCP server</a></h1>
 
 <p align="center">
-  <a href="https://github.com/MarcelBruckner/trilium-mcp/pkgs/container/trilium-mcp">
-    <img alt="GHCR image" src="https://img.shields.io/github/v/release/MarcelBruckner/trilium-mcp?logo=docker&logoColor=white&label=ghcr.io%2Fmarcelbruckner%2Ftrilium-mcp&color=2496ED">
+  <a href="https://github.com/Marceltov/trilium-mcp/pkgs/container/trilium-mcp">
+    <img alt="GHCR image" src="https://img.shields.io/github/v/release/Marceltov/trilium-mcp?logo=docker&logoColor=white&label=ghcr.io%2Fmarceltov%2Ftrilium-mcp&color=2496ED">
   </a>
   <a href="LICENSE">
     <img alt="License: AGPL v3" src="https://img.shields.io/badge/License-AGPL_v3-blue.svg">
@@ -65,7 +65,7 @@ services:
     # ... your existing Trilium service ...
 
   trilium-mcp:
-    image: ghcr.io/marcelbruckner/trilium-mcp:latest
+    image: ghcr.io/marceltov/trilium-mcp:latest
     container_name: trilium-mcp
     restart: unless-stopped
     environment:
