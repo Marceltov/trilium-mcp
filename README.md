@@ -2,7 +2,7 @@
   <img src="docs/trilium.svg" alt="Trilium logo" width="96">
 </p>
 
-<h1 align="center"><a href="https://github.com/MarcelBruckner/trilium-mcp">Trilium ETAPI MCP server</a></h1>
+<h1 align="center"><a href="https://github.com/Marceltov/trilium-mcp">Trilium ETAPI MCP server</a></h1>
 
 <p align="center">
   <a href="https://github.com/Marceltov/trilium-mcp/pkgs/container/trilium-mcp">
