@@ -23,7 +23,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
   trilium-mcp:
     # Build the image from the local source for development. Swap for
-    # `image: ghcr.io/marcelbruckner/trilium-mcp:latest` to use the published one.
+    # `image: ghcr.io/marceltov/trilium-mcp:latest` to use the published one.
     build: .
     restart: unless-stopped
     environment:

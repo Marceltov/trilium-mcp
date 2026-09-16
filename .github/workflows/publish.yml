@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE: ghcr.io/marcelbruckner/trilium-mcp
+  IMAGE: ghcr.io/marceltov/trilium-mcp
 
 concurrency:
   group: publish-${{ github.ref }}
@@ -103,7 +103,7 @@ jobs:
               # ... your existing Trilium service ...
 
             trilium-mcp:
-              image: ghcr.io/marcelbruckner/trilium-mcp:__VERSION__
+              image: ghcr.io/marceltov/trilium-mcp:__VERSION__
               container_name: trilium-mcp
               restart: unless-stopped
               environment:
@@ -135,7 +135,7 @@ jobs:
             --header "Authorization: YOUR_TRILIUM_ETAPI_TOKEN"
           ```
 
-          Full guide: [README](https://github.com/MarcelBruckner/trilium-mcp/blob/__TAG__/README.md#quick-start)
+          Full guide: [README](https://github.com/Marceltov/trilium-mcp/blob/__TAG__/README.md#quick-start)
           EOF
           # The git tag keeps its `v` (v0.1.0); the image tag drops it (0.1.0).
           sed -i "s|__VERSION__|${TAG#v}|g; s|__TAG__|$TAG|g" notes.md
