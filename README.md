@@ -11,6 +11,9 @@
   <a href="LICENSE">
     <img alt="License: AGPL v3" src="https://img.shields.io/badge/License-AGPL_v3-blue.svg">
   </a>
+  <a href="https://github.com/Marceltov/trilium-plugin">
+    <img alt="Claude Code plugin: trilium-plugin" src="https://img.shields.io/badge/Claude_Code_plugin-trilium--plugin-8A2BE2">
+  </a>
 </p>
 
 A standalone [MCP](https://modelcontextprotocol.io) server that exposes the
