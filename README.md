@@ -11,6 +11,9 @@
   <a href="LICENSE">
     <img alt="License: AGPL v3" src="https://img.shields.io/badge/License-AGPL_v3-blue.svg">
   </a>
+  <a href="https://github.com/Marceltov/trilium-plugin">
+    <img alt="Claude Code plugin: trilium-plugin" src="https://img.shields.io/badge/Claude_Code_plugin-trilium--plugin-8A2BE2">
+  </a>
 </p>
 
 A standalone [MCP](https://modelcontextprotocol.io) server that exposes the
@@ -20,6 +23,9 @@ instance: nearly every documented ETAPI endpoint is turned into an MCP tool at s
 via `FastMCP.from_openapi` (**all 38 tools** — `createNote`, `getNoteById`, `searchNotes`,
 `exportNoteSubtree`, …; the auth session endpoints `login`/`logout` are excluded),
 served over streamable **HTTP** so any MCP client connects to it by URL.
+
+> [!IMPORTANT]
+> If your client is [Claude Code](https://code.claude.com), this is best used together with [`trilium-plugin`](https://github.com/Marceltov/trilium-plugin) — the client-side counterpart to this repo, bundling the `.mcp.json` wiring plus ready-made skills (create/delete/move/rename/search notes, manage attributes, work with templates and journal notes, export a subtree) that call these tools, so you get a working Trilium client without writing any of the tool-call glue yourself.
 
 ## Contents
 
