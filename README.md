@@ -24,13 +24,15 @@ via `FastMCP.from_openapi` (**all 38 tools** — `createNote`, `getNoteById`, `s
 `exportNoteSubtree`, …; the auth session endpoints `login`/`logout` are excluded),
 served over streamable **HTTP** so any MCP client connects to it by URL.
 
+> [!IMPORTANT]
+> If your client is [Claude Code](https://code.claude.com), this is best used together with [`trilium-plugin`](https://github.com/Marceltov/trilium-plugin) — the client-side counterpart to this repo, bundling the `.mcp.json` wiring plus ready-made skills (create/delete/move/rename/search notes, manage attributes, work with templates and journal notes, export a subtree) that call these tools, so you get a working Trilium client without writing any of the tool-call glue yourself.
+
 ## Contents
 
 - [Contents](#contents)
 - [Architecture](#architecture)
 - [Quick start](#quick-start)
 - [Connecting a client](#connecting-a-client)
-- [Claude Code plugin](#claude-code-plugin)
 - [Configuration](#configuration)
 - [TLS / reverse proxy](#tls--reverse-proxy)
 - [Security](#security)
@@ -141,10 +143,6 @@ The raw token is what Trilium's ETAPI expects. A `Bearer ` prefix is also accept
 stripped before the request is forwarded), so `Authorization: Bearer YOUR_TOKEN` works too.
 
 Alternatively, use the provided [`.mcp.json`](.mcp.json), filling in your host and token.
-
-## Claude Code plugin
-
-If your client is [Claude Code](https://code.claude.com), skip hand-registering the server: [`trilium-plugin`](https://github.com/Marceltov/trilium-plugin) is the client-side counterpart to this repo. It bundles the `.mcp.json` wiring above plus ready-made skills (create/delete/move/rename/search notes, manage attributes, work with templates and journal notes, export a subtree) that call these tools — install it and you get a working Trilium client without writing any of the tool-call glue yourself. It still needs a `trilium-mcp` deployment (this repo) reachable and credentialed — the plugin is a thin client, not a replacement for the sidecar.
 
 ## Configuration
 
