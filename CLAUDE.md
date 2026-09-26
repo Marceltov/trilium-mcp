@@ -7,8 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A standalone MCP server that turns the [Trilium](https://triliumnotes.org) ETAPI
 (External API) into MCP tools. It runs as a **container sidecar** next to a Trilium
 instance and exposes ~38 tools generated at startup from the bundled OpenAPI spec,
-served over streamable **HTTP**. It stores no secret: each client presents its own
-ETAPI token in the `Authorization` header, which is forwarded per-request to Trilium.
+served over streamable **HTTP**. Clients either present their own ETAPI token in the `Authorization` header (forwarded per-request to Trilium) or log in through OAuth 2.1, where the server mints and stores an ETAPI token per client.
 
 The entire server is one module: `app/server.py`.
 
@@ -56,6 +55,7 @@ Two kinds of tests, both under `app/tests/`:
   `/health` endpoint is unreachable (see `conftest.py` + `_client.stack_reachable`).
   Note: live tests mutate the fixture, so reset `trilium-data/` afterwards (or just use
   `run-tests.sh`).
+- The live tests are **pinned** to the in-repo fixture (`localhost:9091`, `etapi.token`) and deliberately ignore `TRILIUM_MCP_URL` / `TRILIUM_ETAPI_TOKEN`: the trilium plugin exports those for a real instance into every shell, and honoring them once pointed the suite at a production Trilium. `test_live_target.py` guards this; never make the target configurable from the environment.
 
 `test_coverage.py` is a **guard**: it fails if any ETAPI `operationId` (minus the
 excluded `login`/`logout`) lacks a live test, and if tests reference unknown tool
@@ -91,9 +91,9 @@ Also note `validate_output=False`: the live ETAPI returns `null` for fields the 
 types as plain strings (e.g. `branch.prefix`), so output validation would reject
 otherwise-successful calls.
 
-### Token pass-through (the auth model)
+### Auth model
 
-The server holds no secret. The ETAPI token travels per-request through a contextvar:
+In `token` mode the server holds no secret. The ETAPI token travels per-request through a contextvar:
 
 1. `TokenCaptureMiddleware` (pure-ASGI, not `BaseHTTPMiddleware`, so it doesn't buffer the
    streamable-HTTP response) requires an `Authorization` header on the MCP path, rejecting
@@ -106,9 +106,11 @@ The server holds no secret. The ETAPI token travels per-request through a contex
 Validity is enforced by Trilium when the forwarded request arrives — this server never
 validates the token itself.
 
+`MCP_AUTH_MODE` (`token|oauth|both`) picks the gate; see `resolve_auth_mode` (unset → `both` if `MCP_BASE_URL` + `MCP_OAUTH_SECRET` are set, else `token`) and `wrap_app`. In `oauth`/`both`, `TriliumOAuthProvider` (a FastMCP `OAuthProvider`) replaces `TokenCaptureMiddleware`: its `/login` page trades the Trilium password for an ETAPI token via ETAPI `/auth/login`, issues `tmcp_`-prefixed opaque tokens mapped to it in a Fernet-encrypted `FileTreeStore` at `/data/oauth`, and `verify_token` puts the ETAPI token in the access token's `etapi_token` claim, which `EtapiTokenAuth` reads via `get_access_token()`. In `both`, `BearerPrefixMiddleware` adds `Bearer ` to raw headers (FastMCP only parses Bearer), and a non-`tmcp_` bearer that isn't ours is forwarded as a raw ETAPI token. `MCP_BASE_URL` must be HTTPS or localhost (the SDK's issuer rule), checked in `build_oauth_provider`.
+
 ### Startup resilience
 
-If the OpenAPI spec can't be loaded, `main()` falls back to `build_error_server()`, which
+If the OpenAPI spec can't be loaded or the auth configuration is invalid, `main()` falls back to `build_error_server()`, which
 completes the MCP handshake but exposes only a `startup_error` tool describing the failure —
 instead of dying with an opaque connection error.
 
@@ -116,7 +118,7 @@ instead of dying with an opaque connection error.
 
 All config is environment variables (no CLI args), so the server runs cleanly as a sidecar:
 `TRILIUM_SERVER_URL` (`/etapi` is appended automatically), `MCP_HOST`, `MCP_PORT`, `MCP_PATH`,
-`TRILIUM_ETAPI_SPEC`, `MCP_ALLOWED_HOSTS`. Host protection (DNS-rebinding) is **off by
+`TRILIUM_ETAPI_SPEC`, `MCP_ALLOWED_HOSTS`, `MCP_AUTH_MODE`, `MCP_BASE_URL`, `MCP_OAUTH_SECRET`. Host protection (DNS-rebinding) is **off by
 default** (any Host accepted; the token is the real gate) and only restricts when
 `MCP_ALLOWED_HOSTS` is set.
 

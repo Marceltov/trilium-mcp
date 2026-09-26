@@ -156,6 +156,13 @@ All configuration is via environment variables:
 | `MCP_PATH`           | `/mcp`                | HTTP path the MCP endpoint is served at.                                                                 |
 | `TRILIUM_ETAPI_SPEC` | bundled spec          | Override the OpenAPI spec path.                                                                          |
 | `MCP_ALLOWED_HOSTS`  | *(unset = any)*       | Comma-separated `Host` allowlist (DNS-rebinding protection). Unset accepts any Host; set it to restrict. |
+| `MCP_AUTH_MODE`      | `both` if the two OAuth variables are set, else `token` | `token` (raw ETAPI token in `Authorization`), `oauth` (OAuth 2.1 only) or `both`. |
+| `MCP_BASE_URL`       | *(unset)*             | Public URL clients reach this server at, e.g. `https://trilium-mcp.example.com`. The OAuth issuer: must be HTTPS (plain `http` only for `localhost`). Required for `oauth`/`both`. |
+| `MCP_OAUTH_SECRET`   | *(unset)*             | Encrypts the OAuth store at `/data/oauth` (mount a volume at `/data`). Required for `oauth`/`both`; changing it logs every OAuth client out. |
+
+### OAuth
+
+With `MCP_BASE_URL` and `MCP_OAUTH_SECRET` set, clients that support the MCP authorization spec need only the URL: on first connect they open a login page served by this server, you enter your **Trilium password**, and the server mints a dedicated ETAPI token for that client (visible and deletable in Trilium's ETAPI token list). The password goes to Trilium once and is never stored. Revoking a client's OAuth token also deletes its ETAPI token in Trilium. Raw ETAPI tokens in the `Authorization` header (with or without `Bearer `) keep working in the default `both` mode. An invalid `MCP_AUTH_MODE`, or an explicit `oauth`/`both` without its variables, starts the server in the `startup_error` state described under Security.
 
 ## TLS / reverse proxy
 
@@ -189,6 +196,8 @@ protection is disabled), so it can be reached by LAN IP or by the domain your re
 forwards. To lock this down, set `MCP_ALLOWED_HOSTS` to a comma-separated list of the
 host[:port] values you actually use (e.g. `192.168.1.50:8081,trilium.example.com`);
 `localhost` is always allowed, and anything else gets a `421`.
+
+With OAuth enabled (see [OAuth](#oauth)) the server does hold secrets: the ETAPI tokens it mints, stored Fernet-encrypted under `/data/oauth` with the key from `MCP_OAUTH_SECRET`. Protect that volume and that variable like the tokens themselves. The login page shows which client is asking and where the authorization code will be sent. Only approve logins you started yourself, because any client can register and send you a login link.
 
 If the OpenAPI spec cannot be loaded at startup, the server still starts and completes
 the MCP handshake, but exposes only a single `startup_error` tool describing how to fix
