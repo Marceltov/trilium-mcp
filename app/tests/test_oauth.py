@@ -314,3 +314,30 @@ def test_both_mode_accepts_raw_header_without_bearer():
 
     asyncio.run(run())
     assert seen["auth"] == "raw-etapi-token"
+
+
+def test_replayed_login_says_completed_and_mints_nothing():
+    """A browser can re-submit the login form after it succeeded (seen with
+    claude.ai's connector flow). The replay must not mint a second ETAPI token,
+    and must not claim the link "expired" -- the login already went through."""
+    p, calls = make_provider()
+    from starlette.applications import Starlette
+    from starlette.testclient import TestClient
+
+    async def begin():
+        await p.register_client(CLIENT)
+        from mcp.server.auth.provider import AuthorizationParams
+        url = await p.authorize(CLIENT, AuthorizationParams(
+            state="s", scopes=[], code_challenge="x" * 43,
+            redirect_uri="http://localhost:9/cb", redirect_uri_provided_explicitly=True,
+        ))
+        return httpx.URL(url).params["id"]
+
+    pending = asyncio.run(begin())
+    http = TestClient(Starlette(routes=p.get_routes(server.DEFAULT_PATH)), follow_redirects=False)
+    first = http.post("/login", data={"id": pending, "password": "pw"})
+    assert first.status_code == 302
+    replay = http.post("/login", data={"id": pending, "password": "pw"})
+    assert replay.status_code == 200
+    assert "already" in replay.text and "expired" not in replay.text
+    assert len([c for c in calls if c.url.path.endswith("/auth/login")]) == 1

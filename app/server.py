@@ -354,6 +354,13 @@ class TriliumOAuthProvider(OAuthProvider):
                 "from your MCP client.",
                 status=400,
             )
+        if pending.get("done"):
+            # A browser re-submitted a login that already succeeded (seen with
+            # claude.ai's connector flow). Mint nothing; say what happened.
+            return _login_page(
+                error="This login already went through. If your app did not "
+                "connect, start again from the app."
+            )
         params = AuthorizationParams.model_validate(pending["params"])
         client = await self.get_client(pending["client_id"])
         client_name = (client.client_name if client else None) or pending["client_id"]
@@ -372,7 +379,11 @@ class TriliumOAuthProvider(OAuthProvider):
                 error=f"Trilium rejected the login (HTTP {response.status_code}).",
                 status=401,
             )
-        await self.store.delete(pending_id, collection="pending")
+        # Keep a short-lived marker instead of deleting, so a replayed form gets
+        # an honest answer (see above) rather than "expired".
+        await self.store.put(
+            pending_id, {"done": True}, collection="pending", ttl=PENDING_LOGIN_TTL
+        )
         code = AuthorizationCode(
             code=OAUTH_TOKEN_PREFIX + secrets.token_urlsafe(32),
             client_id=pending["client_id"],
