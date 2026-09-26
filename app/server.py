@@ -748,6 +748,36 @@ def build_error_server(error: BaseException) -> FastMCP:
     return mcp
 
 
+class BearerPrefixMiddleware:
+    """`both` mode: turn a raw `Authorization: <etapi token>` header -- what
+    token-mode clients send -- into `Bearer <token>`, the only form FastMCP's
+    OAuth middleware reads. TriliumOAuthProvider.verify_token then passes it
+    through to Trilium. Pure ASGI, like TokenCaptureMiddleware.
+    """
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            headers = []
+            for name, value in scope.get("headers") or []:
+                if name == b"authorization" and value and b" " not in value.strip():
+                    value = b"Bearer " + value.strip()
+                headers.append((name, value))
+            scope = {**scope, "headers": headers}
+        await self.app(scope, receive, send)
+
+
+def wrap_app(inner, mode: str):
+    """Put the auth-mode's ASGI gate in front of FastMCP's app."""
+    if mode == "token":
+        return TokenCaptureMiddleware(inner)
+    if mode == "both":
+        return BearerPrefixMiddleware(inner)
+    return inner
+
+
 def serve(mcp: FastMCP, mode: str = "token") -> None:
     """Serve an MCP server over streamable HTTP using the MCP_* environment
     configuration. In `token` mode TokenCaptureMiddleware gates the endpoint;
@@ -771,7 +801,7 @@ def serve(mcp: FastMCP, mode: str = "token") -> None:
         inner = mcp.http_app(path=path, host_origin_protection=False)
         print(f"Host protection OFF (any Host accepted) -- set "
               f"{MCP_ALLOWED_HOSTS_ENV} to restrict.", file=sys.stderr)
-    app = TokenCaptureMiddleware(inner) if mode == "token" else inner
+    app = wrap_app(inner, mode)
 
     print(f"Serving Trilium ETAPI MCP on http://{host}:{port}{path} "
           f"(auth mode: {mode})",

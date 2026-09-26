@@ -272,3 +272,45 @@ def test_plain_http_base_url_fails_at_startup(monkeypatch, tmp_path):
     monkeypatch.setenv("MCP_OAUTH_SECRET", "s3cret-s3cret")
     with pytest.raises(RuntimeError, match="MCP_BASE_URL.*HTTPS"):
         server.build_oauth_provider("both")
+
+
+def test_both_mode_accepts_raw_header_without_bearer():
+    """Existing clients send `Authorization: <etapi token>` (no Bearer); in both
+    mode that must still reach Trilium, as it does in token mode."""
+    seen = {}
+
+    def trilium(request: httpx.Request) -> httpx.Response:
+        seen["auth"] = request.headers.get("Authorization")
+        return httpx.Response(200, json=APP_INFO)
+
+    mock = httpx.MockTransport(trilium)
+    base = "http://trilium:8080/etapi"
+    provider = server.TriliumOAuthProvider(
+        base_url="http://localhost", store=MemoryStore(),
+        etapi=httpx.AsyncClient(base_url=base, transport=mock), passthrough=True,
+    )
+    mcp = server.build_server(
+        client=httpx.AsyncClient(base_url=base, auth=server.EtapiTokenAuth(), transport=mock),
+        auth=provider,
+    )
+    inner = mcp.http_app(path=server.DEFAULT_PATH)
+    app = server.wrap_app(inner, "both")
+
+    def factory(**kw):
+        kw.pop("transport", None)
+        return httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://localhost", **kw
+        )
+
+    async def run():
+        async with inner.router.lifespan_context(inner):
+            transport = StreamableHttpTransport(
+                url="http://localhost/mcp",
+                headers={"Authorization": "raw-etapi-token"},
+                httpx_client_factory=factory,
+            )
+            async with Client(transport) as c:
+                return await c.call_tool("getAppInfo", {})
+
+    asyncio.run(run())
+    assert seen["auth"] == "raw-etapi-token"
