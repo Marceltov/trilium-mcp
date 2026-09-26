@@ -15,6 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License along
 # with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import html
 import io
 import os
 import secrets
@@ -24,6 +25,7 @@ import traceback
 import zipfile
 from contextvars import ContextVar
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 import uvicorn
@@ -34,10 +36,17 @@ from fastmcp.server.auth.auth import ClientRegistrationOptions, RevocationOption
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.providers.openapi import MCPType, OpenAPITool, RouteMap
 from key_value.aio.protocols import AsyncKeyValue
-from mcp.server.auth.provider import AuthorizationCode, RefreshToken, TokenError
+from mcp.server.auth.provider import (
+    AuthorizationCode,
+    AuthorizationParams,
+    RefreshToken,
+    TokenError,
+    construct_redirect_uri,
+)
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse
+from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from starlette.routing import Route
 
 # The ETAPI OpenAPI spec ships alongside this server (baked into the image).
 # Tools are generated from it at startup.
@@ -146,6 +155,31 @@ class TokenCaptureMiddleware:
             _incoming_auth.reset(token)
 
 
+def _login_page(pending_id="", client_name="", redirect_host="", error="", status=200):
+    """The one page a human sees: who is asking, where the code goes, password."""
+    e = html.escape
+    form = "" if not pending_id else (
+        f"<p><b>{e(client_name)}</b> wants access to your Trilium notes. After "
+        f"login you will be sent to <b>{e(redirect_host)}</b>. Only continue if "
+        f"you started this.</p>"
+        f'<form method="post"><input type="hidden" name="id" value="{e(pending_id)}">'
+        f'<label>Trilium password <input type="password" name="password" '
+        f"autofocus required></label><button>Authorize</button></form>"
+    )
+    err = f'<p style="color:#b00">{e(error)}</p>' if error else ""
+    body = (
+        '<!doctype html><html><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        "<title>Trilium MCP login</title><style>body{font-family:system-ui,"
+        "sans-serif;max-width:28rem;margin:4rem auto;padding:0 1rem}input,button"
+        "{font:inherit;padding:.4rem;margin:.3rem 0;width:100%;box-sizing:"
+        f"border-box}}</style></head><body><h1>Trilium MCP</h1>{err}{form}"
+        "</body></html>"
+    )
+    # DENY framing so the password form can't be clickjacked.
+    return HTMLResponse(body, status_code=status, headers={"X-Frame-Options": "DENY"})
+
+
 class TriliumOAuthProvider(OAuthProvider):
     """OAuth 2.1 authorization server whose login is the Trilium password.
 
@@ -186,6 +220,18 @@ class TriliumOAuthProvider(OAuthProvider):
             client_info.model_dump(mode="json"),
             collection="clients",
         )
+
+    async def authorize(
+        self, client: OAuthClientInformationFull, params: AuthorizationParams
+    ) -> str:
+        pending_id = secrets.token_urlsafe(32)
+        await self.store.put(
+            pending_id,
+            {"client_id": client.client_id, "params": params.model_dump(mode="json")},
+            collection="pending",
+            ttl=PENDING_LOGIN_TTL,
+        )
+        return f"{str(self.base_url).rstrip('/')}/login?id={pending_id}"
 
     async def load_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: str
@@ -276,6 +322,64 @@ class TriliumOAuthProvider(OAuthProvider):
             )
         except httpx.HTTPError:
             pass
+
+    def get_routes(self, mcp_path: str | None = None) -> list[Route]:
+        return [
+            *super().get_routes(mcp_path),
+            Route("/login", self._login, methods=["GET", "POST"]),
+        ]
+
+    async def _login(self, request: Request):
+        form = await request.form() if request.method == "POST" else request.query_params
+        pending_id = form.get("id", "")
+        pending = (
+            await self.store.get(pending_id, collection="pending") if pending_id else None
+        )
+        if not pending:
+            return _login_page(
+                error="This login link has expired. Start the connection again "
+                "from your MCP client.",
+                status=400,
+            )
+        params = AuthorizationParams.model_validate(pending["params"])
+        client = await self.get_client(pending["client_id"])
+        client_name = (client.client_name if client else None) or pending["client_id"]
+        redirect = str(params.redirect_uri)
+        page = (pending_id, client_name, urlsplit(redirect).netloc or redirect)
+        if request.method == "GET":
+            return _login_page(*page)
+
+        # The password goes straight to Trilium and is never stored or logged.
+        response = await self.etapi.post(
+            "/auth/login", json={"password": form.get("password", "")}
+        )
+        if not response.is_success:
+            return _login_page(
+                *page,
+                error=f"Trilium rejected the login (HTTP {response.status_code}).",
+                status=401,
+            )
+        await self.store.delete(pending_id, collection="pending")
+        code = AuthorizationCode(
+            code=OAUTH_TOKEN_PREFIX + secrets.token_urlsafe(32),
+            client_id=pending["client_id"],
+            scopes=params.scopes or [],
+            expires_at=time.time() + AUTH_CODE_TTL,
+            code_challenge=params.code_challenge,
+            redirect_uri=params.redirect_uri,
+            redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
+            resource=params.resource,
+        )
+        await self.store.put(
+            code.code,
+            {"code": code.model_dump(mode="json"), "etapi_token": response.json()["authToken"]},
+            collection="codes",
+            ttl=AUTH_CODE_TTL,
+        )
+        return RedirectResponse(
+            construct_redirect_uri(redirect, code=code.code, state=params.state),
+            status_code=302,
+        )
 
     async def _issue(
         self, client_id: str, scopes: list[str], etapi_token: str
@@ -456,21 +560,27 @@ def register_content_put_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
         return f"Updated content of attachment {attachmentId!r}."
 
 
-def build_server(client: httpx.AsyncClient | None = None) -> FastMCP:
+def etapi_url() -> str:
+    """TRILIUM_SERVER_URL with `/etapi` appended (see the spec's `servers`)."""
+    server_url = os.environ.get(SERVER_ENV, DEFAULT_SERVER_URL).rstrip("/")
+    return server_url if server_url.endswith("/etapi") else f"{server_url}/etapi"
+
+
+def build_server(
+    client: httpx.AsyncClient | None = None,
+    auth: TriliumOAuthProvider | None = None,
+) -> FastMCP:
     """Load the local OpenAPI spec and turn every documented ETAPI endpoint
     into a FastMCP tool. The ETAPI token is supplied per request by the client
     (see TokenCaptureMiddleware / EtapiTokenAuth), so no token is read here.
 
     `client` is injectable for testing; in production the default client targets
-    TRILIUM_SERVER_URL and authenticates from the per-request contextvar.
+    TRILIUM_SERVER_URL and authenticates from the per-request token. `auth`
+    enables OAuth (see TriliumOAuthProvider); None keeps plain token pass-through.
     """
     if client is None:
-        server_url = os.environ.get(SERVER_ENV, DEFAULT_SERVER_URL).rstrip("/")
-        # ETAPI endpoints live under /etapi (see the spec's `servers` list).
-        if not server_url.endswith("/etapi"):
-            server_url = f"{server_url}/etapi"
         client = httpx.AsyncClient(
-            base_url=server_url, auth=EtapiTokenAuth(), timeout=60
+            base_url=etapi_url(), auth=EtapiTokenAuth(), timeout=60
         )
 
     spec_path = Path(os.environ.get(SPEC_ENV, str(DEFAULT_SPEC)))
@@ -507,6 +617,7 @@ def build_server(client: httpx.AsyncClient | None = None) -> FastMCP:
         openapi_spec=spec,
         client=client,
         name="Trilium ETAPI MCP",
+        auth=auth,
         # The live ETAPI returns null for fields the spec types as plain
         # strings (e.g. branch.prefix), so response validation would reject
         # otherwise-successful calls. Return the real response instead.

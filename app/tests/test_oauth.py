@@ -28,7 +28,7 @@ def make_provider(passthrough=True):
         base_url="http://trilium:8080/etapi", transport=httpx.MockTransport(trilium)
     )
     provider = server.TriliumOAuthProvider(
-        base_url="http://test", store=MemoryStore(), etapi=etapi, passthrough=passthrough
+        base_url="http://localhost", store=MemoryStore(), etapi=etapi, passthrough=passthrough
     )
     return provider, calls
 
@@ -103,3 +103,113 @@ def test_registered_client_round_trips():
         return await p.get_client("c1")
 
     assert asyncio.run(go()).redirect_uris == CLIENT.redirect_uris
+
+
+import base64
+import hashlib
+import secrets
+
+from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
+
+from tests.test_integration import APP_INFO
+
+REDIRECT = "http://localhost:9/cb"
+
+
+def test_full_oauth_flow_forwards_minted_etapi_token():
+    """register -> authorize -> /login -> token -> MCP tool call, all in-process;
+    the tool's ETAPI call must carry the token minted by /auth/login."""
+    seen = {}
+
+    def trilium(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/auth/login"):
+            ok = json.loads(request.content)["password"] == "pw"
+            return httpx.Response(201, json={"authToken": "minted-etapi"}) if ok else httpx.Response(401)
+        if request.url.path.endswith("/app-info"):
+            seen["auth"] = request.headers.get("Authorization")
+            return httpx.Response(200, json=APP_INFO)
+        return httpx.Response(404)
+
+    mock = httpx.MockTransport(trilium)
+    base = "http://trilium:8080/etapi"
+    provider = server.TriliumOAuthProvider(
+        base_url="http://localhost",
+        store=MemoryStore(),
+        etapi=httpx.AsyncClient(base_url=base, transport=mock),
+        passthrough=False,
+    )
+    mcp = server.build_server(
+        client=httpx.AsyncClient(base_url=base, auth=server.EtapiTokenAuth(), transport=mock),
+        auth=provider,
+    )
+    app = mcp.http_app(path=server.DEFAULT_PATH)
+
+    def factory(**kw):
+        kw.pop("transport", None)
+        return httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://localhost", **kw
+        )
+
+    async def run():
+        async with app.router.lifespan_context(app):
+            async with factory() as http:
+                # Unauthenticated MCP call -> 401 that points at OAuth discovery.
+                r = await http.post(server.DEFAULT_PATH, json={})
+                assert r.status_code == 401
+                assert "resource_metadata" in r.headers["www-authenticate"]
+
+                r = await http.post("/register", json={
+                    "client_name": "itest", "redirect_uris": [REDIRECT],
+                    "token_endpoint_auth_method": "none",
+                    "grant_types": ["authorization_code", "refresh_token"],
+                    "response_types": ["code"],
+                })
+                client_id = r.json()["client_id"]
+                verifier = secrets.token_urlsafe(48)
+                challenge = base64.urlsafe_b64encode(
+                    hashlib.sha256(verifier.encode()).digest()
+                ).rstrip(b"=").decode()
+                r = await http.get("/authorize", params={
+                    "response_type": "code", "client_id": client_id,
+                    "redirect_uri": REDIRECT, "code_challenge": challenge,
+                    "code_challenge_method": "S256", "state": "s1",
+                })
+                pending = httpx.URL(r.headers["location"]).params["id"]
+
+                page = await http.get("/login", params={"id": pending})
+                assert "itest" in page.text and "localhost:9" in page.text
+                bad = await http.post("/login", data={"id": pending, "password": "nope"})
+                assert bad.status_code == 401  # pending login survives a typo
+                r = await http.post("/login", data={"id": pending, "password": "pw"})
+                back = httpx.URL(r.headers["location"])
+                assert back.params["state"] == "s1"
+
+                r = await http.post("/token", data={
+                    "grant_type": "authorization_code", "code": back.params["code"],
+                    "redirect_uri": REDIRECT, "client_id": client_id,
+                    "code_verifier": verifier,
+                })
+                access = r.json()["access_token"]
+
+            transport = StreamableHttpTransport(
+                url="http://localhost/mcp",
+                headers={"Authorization": f"Bearer {access}"},
+                httpx_client_factory=factory,
+            )
+            async with Client(transport) as c:
+                return await c.call_tool("getAppInfo", {})
+
+    result = asyncio.run(run())
+    assert result.data["appVersion"] == "1"
+    assert seen["auth"] == "minted-etapi"
+
+
+def test_expired_login_link_is_rejected():
+    p, _ = make_provider()
+    app = p.get_routes(server.DEFAULT_PATH)
+    from starlette.applications import Starlette
+    from starlette.testclient import TestClient
+
+    r = TestClient(Starlette(routes=app)).get("/login", params={"id": "nope"})
+    assert r.status_code == 400
