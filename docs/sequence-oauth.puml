@@ -1,0 +1,58 @@
+@startuml sequence-oauth
+!include theme.iuml
+title Trilium ETAPI MCP — OAuth 2.1 flow
+
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+autonumber
+
+actor "User\n(browser)" as User
+participant "MCP client\n(app)" as Client
+
+box "trilium-mcp (this repo)"
+    participant "TriliumOAuthProvider\n(/register /authorize\n/login /token /revoke)" as AS #F4C48D
+    participant "FastMCP\n+ EtapiTokenAuth" as MCP #98D486
+    database "mcp-oauth\n(encrypted)" as Store
+end box
+
+participant "Trilium\nETAPI" as Trilium
+
+== Discovery and registration ==
+Client -> MCP : POST /mcp (no token)
+MCP --> Client : 401\nWWW-Authenticate: Bearer resource_metadata=…
+Client -> AS : GET /.well-known/…\nPOST /register
+AS -> Store : save client
+AS --> Client : client_id
+
+== Login (once per client) ==
+Client -> AS : GET /authorize (PKCE)
+AS -> Store : pending login
+AS --> User : redirect to /login
+User -> AS : POST /login\nTrilium password
+AS -> Trilium : POST /auth/login {password}
+Trilium --> AS : new ETAPI token
+note right of AS : Password is used once,\nnever stored or logged.
+AS -> Store : auth code → ETAPI token
+AS --> Client : redirect with code
+Client -> AS : POST /token (code + verifier)
+AS -> Store : tmcp_ access + refresh token\n→ ETAPI token
+AS --> Client : access token (1 h)\nrefresh token (30 d)
+
+== Tool call ==
+Client -> MCP : POST /mcp\nAuthorization: Bearer <access token>
+MCP -> AS : verify_token
+AS -> Store : look up
+AS --> MCP : claims.etapi_token
+MCP -> Trilium : /etapi/…\nAuthorization: <ETAPI token>
+Trilium --> MCP : JSON
+MCP --> Client : tool result
+
+== Refresh and revoke ==
+Client -> AS : POST /token (refresh_token)
+AS -> Store : rotate pair, same ETAPI token
+AS --> Client : new access + refresh token
+Client -> AS : POST /revoke
+AS -> Store : drop pair
+AS -> Trilium : POST /auth/logout\n(deletes the minted ETAPI token)
+
+@enduml

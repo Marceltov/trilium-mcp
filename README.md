@@ -47,16 +47,13 @@ served over streamable **HTTP** so any MCP client connects to it by URL.
   <img src="docs/architecture.png" alt="Architecture: MCP clients → trilium-mcp → Trilium, on the Docker network" width="720">
 </p>
 
-**trilium-mcp** (this repo) runs as a container sidecar and talks to Trilium over the internal
-Docker network, so Trilium's ETAPI is never exposed publicly on its own. Clients reach trilium-mcp
-either through a TLS-terminating reverse proxy or directly over a trusted LAN — in both cases the
-ETAPI token they present is the only credential.
+**trilium-mcp** (this repo) runs as a container sidecar and talks to Trilium over the internal Docker network, so Trilium's ETAPI is never exposed publicly on its own. Clients reach trilium-mcp either through a TLS-terminating reverse proxy or directly over a trusted LAN, and authenticate in one of two ways (see [Choosing an auth method](#choosing-an-auth-method)): **OAuth** — log in once in the browser with your Trilium password; best for remote access and app clients — or an **ETAPI token** in the `Authorization` header; best for headless clients and the local LAN.
 
 ## Quick start
 
 **1. Create an ETAPI token in Trilium** — *Options → ETAPI → Create new ETAPI token*.
 This token is the only credential: trilium-mcp stores no secret and forwards the raw token
-straight through to Trilium. Each client presents its own token per request.
+straight through to Trilium. Each client presents its own token per request. (Connecting remote or app clients? Skip the token and use [OAuth](#oauth-remote-access-and-app-clients) instead.)
 
 <p align="center">
   <img src="docs/create-etapi.png" alt="Trilium Options → ETAPI screen with the Create new ETAPI token button" width="720">
@@ -77,6 +74,11 @@ services:
     environment:
       # Service name of your existing Trilium on the same compose network.
       TRILIUM_SERVER_URL: http://trilium:8080
+      # Optional — enables OAuth login (see "Choosing an auth method"):
+      # MCP_BASE_URL: https://trilium-mcp.example.com
+      # MCP_OAUTH_SECRET: <long random string>
+    # volumes:
+    #   - mcp-oauth:/data   # keeps OAuth logins across restarts
     ports:
       - "8081:8081"
 ```
@@ -104,6 +106,27 @@ Your client now has the Trilium tools. See [Connecting a client](#connecting-a-c
 remote hosts, multiple instances, and `.mcp.json`.
 
 ## Connecting a client
+
+### Choosing an auth method
+
+| Method | Best for | How the client authenticates |
+| ------ | -------- | ---------------------------- |
+| **OAuth** | Remote access and app clients (Claude desktop / web / mobile, IDEs, anything that can open a browser) | Only the URL is configured; on first connect a browser page asks for your Trilium password once, and the server mints a dedicated ETAPI token for that client. Nothing secret is pasted into client config. |
+| **ETAPI token** | Headless clients (scripts, CI, servers, agents with no browser) and the local LAN | The token from *Options → ETAPI* goes in the `Authorization` header on every request. |
+
+Both work side by side in the default `both` mode once OAuth is configured (`MCP_BASE_URL` + `MCP_OAUTH_SECRET`, see [OAuth details](#oauth-details)); without those variables the server accepts ETAPI tokens only. OAuth needs an **HTTPS** public URL (plain `http` only for `localhost`), so it goes with a reverse proxy; an ETAPI token over plain HTTP is for networks you trust.
+
+### OAuth (remote access and app clients)
+
+Register the URL with no header; the client opens the login page on first use:
+
+```bash
+claude mcp add trilium --scope user --transport http https://trilium-mcp.example.com/mcp
+```
+
+In Claude Code, run `/mcp` and pick the server to authenticate. Each client gets its own ETAPI token, visible and deletable under *Options → ETAPI* — deleting it there, or revoking the OAuth token, disconnects just that client.
+
+### ETAPI token (headless and LAN)
 
 The ETAPI token is the credential — pass it in the `Authorization` header. Point the URL at
 wherever trilium-mcp is reachable (a TLS reverse proxy, or the container directly on a trusted LAN):
@@ -160,7 +183,7 @@ All configuration is via environment variables:
 | `MCP_BASE_URL`       | *(unset)*             | Public URL clients reach this server at, e.g. `https://trilium-mcp.example.com`. The OAuth issuer: must be HTTPS (plain `http` only for `localhost`). Required for `oauth`/`both`. |
 | `MCP_OAUTH_SECRET`   | *(unset)*             | Encrypts the OAuth store at `/data/oauth` (mount a volume at `/data`). Required for `oauth`/`both`; changing it logs every OAuth client out. |
 
-### OAuth
+### OAuth details
 
 With `MCP_BASE_URL` and `MCP_OAUTH_SECRET` set, clients that support the MCP authorization spec need only the URL: on first connect they open a login page served by this server, you enter your **Trilium password**, and the server mints a dedicated ETAPI token for that client (visible and deletable in Trilium's ETAPI token list). The password goes to Trilium once and is never stored. Revoking a client's OAuth token also deletes its ETAPI token in Trilium. Raw ETAPI tokens in the `Authorization` header (with or without `Bearer `) keep working in the default `both` mode. An invalid `MCP_AUTH_MODE`, or an explicit `oauth`/`both` without its variables, starts the server in the `startup_error` state described under Security.
 
@@ -177,12 +200,7 @@ your-host {
 
 ## Security
 
-The MCP endpoint grants **full read/write access to your notes**. Every request must
-carry a valid Trilium ETAPI token in the `Authorization` header; requests with no
-`Authorization` header at all are rejected with `401` before reaching any tool. The
-server never validates the token itself — validity is enforced by Trilium when the
-forwarded request reaches the actual ETAPI call, and the server holds no secret of its
-own. The `/health` endpoint is always unauthenticated (used by the container
+The MCP endpoint grants **full read/write access to your notes**. Every request must carry either a Trilium ETAPI token or an OAuth access token issued by this server in the `Authorization` header; requests with no `Authorization` header at all are rejected with `401` before reaching any tool. The server never validates an ETAPI token itself — validity is enforced by Trilium when the forwarded request reaches the actual ETAPI call — and in token-only mode it holds no secret of its own. The `/health` endpoint is always unauthenticated (used by the container
 healthcheck).
 
 The token is sent in the `Authorization` header on every call. Over plain HTTP it travels
@@ -197,7 +215,7 @@ forwards. To lock this down, set `MCP_ALLOWED_HOSTS` to a comma-separated list o
 host[:port] values you actually use (e.g. `192.168.1.50:8081,trilium.example.com`);
 `localhost` is always allowed, and anything else gets a `421`.
 
-With OAuth enabled (see [OAuth](#oauth)) the server does hold secrets: the ETAPI tokens it mints, stored Fernet-encrypted under `/data/oauth` with the key from `MCP_OAUTH_SECRET`. Protect that volume and that variable like the tokens themselves. The login page shows which client is asking and where the authorization code will be sent. Only approve logins you started yourself, because any client can register and send you a login link.
+With OAuth enabled (see [OAuth details](#oauth-details)) the server does hold secrets: the ETAPI tokens it mints, stored Fernet-encrypted under `/data/oauth` with the key from `MCP_OAUTH_SECRET`. Protect that volume and that variable like the tokens themselves. The login page shows which client is asking and where the authorization code will be sent. Only approve logins you started yourself, because any client can register and send you a login link.
 
 If the OpenAPI spec cannot be loaded at startup, the server still starts and completes
 the MCP handshake, but exposes only a single `startup_error` tool describing how to fix
@@ -205,10 +223,10 @@ it (rather than failing with an opaque connection error).
 
 ## How it works
 
-At a glance, trilium-mcp forwards the client's ETAPI token straight through to Trilium:
+At a glance, trilium-mcp forwards the client's ETAPI token straight through to Trilium — or, with OAuth, the ETAPI token it minted for that client at login:
 
 <p align="center">
-  <img src="docs/sequence-overview.png" alt="Client sends a tool call with an ETAPI token; trilium-mcp forwards it to Trilium and returns the result" width="560">
+  <img src="docs/sequence-overview.png" alt="Both auth paths: a tool call with an ETAPI token forwarded to Trilium, and an OAuth login that mints an ETAPI token which later tool calls use" width="560">
 </p>
 
 <details>
@@ -226,6 +244,19 @@ ETAPI call:
 
 </details>
 
+<details>
+<summary>Detailed OAuth sequence (discovery, login, tool call, refresh, revoke)</summary>
+
+<p></p>
+
+The client discovers the OAuth endpoints from the `401`, registers itself, and sends the user to the login page. The Trilium password is exchanged once for a fresh ETAPI token; the client only ever holds opaque `tmcp_` tokens that map to it:
+
+<p align="center">
+  <img src="docs/sequence-oauth.png" alt="OAuth sequence: discovery and registration, browser login minting an ETAPI token, tool call with the mapped token, refresh and revoke" width="720">
+</p>
+
+</details>
+
 ## Alternatives
 
 Other open-source Trilium/TriliumNext MCP servers exist. Most are stdio subprocesses that
@@ -238,7 +269,7 @@ OpenAPI spec** (full endpoint coverage) rather than hand-written.
 
 | Project                                                                             | Language   | Transport           | Token handling                                                            | Tools                           | Docker image         | Latest activity |
 | ----------------------------------------------------------------------------------- | ---------- | ------------------- | ------------------------------------------------------------------------- | ------------------------------- | -------------------- | --------------- |
-| **trilium-mcp** (this)                                                              | Python     | Streamable **HTTP** | Per-request `Authorization` pass-through (many clients, no stored secret) | **~40**, generated from OpenAPI | Yes (sidecar + GHCR) | active          |
+| **trilium-mcp** (this)                                                              | Python     | Streamable **HTTP** | Per-request `Authorization` pass-through, or OAuth 2.1 login (many clients) | **~40**, generated from OpenAPI | Yes (sidecar + GHCR) | active          |
 | [tan-yong-sheng/triliumnext-mcp](https://github.com/tan-yong-sheng/triliumnext-mcp) | TypeScript | stdio               | Env var, baked in                                                         | 11, hand-written                | Yes (GHCR)           | Mar 2026        |
 | [paerrin/trilium-mcp-server](https://codeberg.org/paerrin/trilium-mcp-server)       | Node.js/TS | stdio               | Config file, multi-instance                                               | 24, hand-written                | No                   | Jan 2026        |
 | [radonx/mcp-trilium](https://github.com/radonx/mcp-trilium)                         | JavaScript | stdio               | Env var, baked in                                                         | 4, hand-written                 | No                   | Aug 2025        |

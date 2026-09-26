@@ -58,6 +58,12 @@ claude mcp add trilium-dev --transport http \
   --header "Authorization: $(cat etapi.token)"
 ```
 
+The dev stack also runs with OAuth enabled (`MCP_BASE_URL=http://localhost:9091`), so you can exercise the browser flow instead: register the URL without a header, run `/mcp` in Claude Code to authenticate, and log in with the fixture password `trilium-mcp`.
+
+```bash
+claude mcp add trilium-dev-oauth --transport http http://localhost:9091/mcp
+```
+
 ### Resetting the fixture
 
 To discard local changes to the seeded database and return to the committed state:
