@@ -15,21 +15,46 @@
 # You should have received a copy of the GNU Affero General Public License along
 # with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import html
 import io
 import os
+import secrets
 import sys
+import time
 import traceback
 import zipfile
 from contextvars import ContextVar
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 import uvicorn
 import yaml
 from fastmcp import FastMCP
+from fastmcp.server.auth import AccessToken, OAuthProvider
+from fastmcp.server.auth.auth import ClientRegistrationOptions, RevocationOptions
+from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.providers.openapi import MCPType, OpenAPITool, RouteMap
+from key_value.aio.protocols import AsyncKeyValue
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1CollectionSanitizationStrategy,
+    FileTreeV1KeySanitizationStrategy,
+)
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from mcp.server.auth.provider import (
+    AuthorizationCode,
+    AuthorizationParams,
+    RefreshToken,
+    TokenError,
+    construct_redirect_uri,
+)
+from mcp.server.auth.routes import validate_issuer_url
+from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from pydantic import AnyHttpUrl
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse
+from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from starlette.routing import Route
 
 # The ETAPI OpenAPI spec ships alongside this server (baked into the image).
 # Tools are generated from it at startup.
@@ -43,12 +68,17 @@ MCP_HOST_ENV = "MCP_HOST"                  # Interface the MCP server binds to
 MCP_PORT_ENV = "MCP_PORT"                  # Port the MCP server listens on
 MCP_PATH_ENV = "MCP_PATH"                  # HTTP path the MCP endpoint is served at
 MCP_ALLOWED_HOSTS_ENV = "MCP_ALLOWED_HOSTS"  # comma-separated Host allowlist (see serve)
+AUTH_MODE_ENV = "MCP_AUTH_MODE"            # token | oauth | both (see resolve_auth_mode)
+BASE_URL_ENV = "MCP_BASE_URL"              # public URL clients reach us at (OAuth issuer)
+OAUTH_SECRET_ENV = "MCP_OAUTH_SECRET"      # encrypts the OAuth store at rest
 
 DEFAULT_SERVER_URL = "http://trilium:8080"
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8081
 DEFAULT_PATH = "/mcp"
 HEALTH_PATH = "/health"
+AUTH_MODES = ("token", "oauth", "both")
+OAUTH_STORE_DIR = Path("/data/oauth")      # mount a volume at /data to keep logins
 
 # exportNoteSubtree returns a binary ZIP, which FastMCP's OpenAPI machinery
 # tries to JSON-decode (crashing on the first non-UTF-8 byte). We exclude the
@@ -58,21 +88,32 @@ EXPORT_DEFAULT_FORMAT = "markdown"
 # Cap the returned text so a huge subtree can't blow up the client context.
 MAX_EXPORT_CHARS = 200_000
 
+# OAuth (see TriliumOAuthProvider). Issued codes/tokens carry this prefix so a
+# stale one is recognizably ours and is never mistaken for a raw ETAPI token.
+OAUTH_TOKEN_PREFIX = "tmcp_"
+PENDING_LOGIN_TTL = 10 * 60
+AUTH_CODE_TTL = 5 * 60
+ACCESS_TOKEN_TTL = 60 * 60
+REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60
+
 # Per-request holder for the incoming client Authorization header. Populated by
 # TokenCaptureMiddleware and read by EtapiTokenAuth when calling Trilium.
 _incoming_auth: ContextVar[str | None] = ContextVar("incoming_auth", default=None)
 
 
 class EtapiTokenAuth(httpx.Auth):
-    """Forward the client-supplied ETAPI token to Trilium.
+    """Forward the client's ETAPI token to Trilium.
 
-    The token arrives per-request in the `_incoming_auth` contextvar (set by
+    With OAuth (see TriliumOAuthProvider), FastMCP's request-scoped access token
+    carries the ETAPI token in `claims["etapi_token"]`. Otherwise the token is
+    the raw client header in the `_incoming_auth` contextvar (set by
     TokenCaptureMiddleware). Trilium's ETAPI expects the raw token as the
     Authorization value, so we strip a leading 'Bearer ' if the client sent one.
     """
 
     def auth_flow(self, request: httpx.Request):
-        raw = _incoming_auth.get()
+        access = get_access_token()
+        raw = access.claims.get("etapi_token") if access else _incoming_auth.get()
         if raw and raw[:7].lower() == "bearer ":
             raw = raw[7:].strip()
         if not raw:
@@ -125,6 +166,305 @@ class TokenCaptureMiddleware:
             await self.app(scope, receive, send)
         finally:
             _incoming_auth.reset(token)
+
+
+def _page(inner: str, status: int = 200) -> HTMLResponse:
+    """Minimal standalone HTML page for the login flow."""
+    body = (
+        '<!doctype html><html><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        "<title>Trilium MCP login</title><style>body{font-family:system-ui,"
+        "sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;line-height:1.5}"
+        "input,button{font:inherit;padding:.4rem;margin:.3rem 0;width:100%;"
+        f"box-sizing:border-box}}</style></head><body><h1>Trilium MCP</h1>{inner}"
+        "</body></html>"
+    )
+    # DENY framing so the password form can't be clickjacked.
+    return HTMLResponse(body, status_code=status, headers={"X-Frame-Options": "DENY"})
+
+
+def _login_page(pending_id, client_name, redirect_host, error="", status=200):
+    """The one page a human sees: who is asking, where the code goes, password."""
+    e = html.escape
+    err = f'<p style="color:#b00">{e(error)}</p>' if error else ""
+    return _page(
+        f"{err}<p><b>{e(client_name)}</b> wants access to your Trilium notes. After "
+        f"login you will be sent to <b>{e(redirect_host)}</b>. Only continue if "
+        f"you started this.</p>"
+        f'<form method="post"><input type="hidden" name="id" value="{e(pending_id)}">'
+        f'<label>Trilium password <input type="password" name="password" '
+        f"autofocus required></label><button>Authorize</button></form>",
+        status,
+    )
+
+
+def _dead_end_page(heading: str, what: str, status: int) -> HTMLResponse:
+    """A login that can't continue from here. The usual cause is the MCP app
+    interrupting its own OAuth flow -- claude.ai asking the user to log in to
+    claude.ai partway through, then dropping the finished login -- so say that,
+    say it isn't the server's fault, and give the fix."""
+    return _page(
+        f"<h2>{html.escape(heading)}</h2><p>{html.escape(what)}</p>"
+        "<p><b>Why:</b> your app interrupted its own login. Most often it asked "
+        "you to log in to the app itself (for example claude.ai) partway through, "
+        "then lost track of this login. Nothing is wrong with your Trilium or "
+        "this MCP server.</p>"
+        "<p><b>Fix:</b> go back to your app and remove this connector and add it "
+        "again, or use its Reconnect / Authenticate button. Being logged in to "
+        "the app first avoids the interruption.</p>",
+        status,
+    )
+
+
+class TriliumOAuthProvider(OAuthProvider):
+    """OAuth 2.1 authorization server whose login is the Trilium password.
+
+    FastMCP/the MCP SDK serve discovery, dynamic client registration,
+    /authorize, /token (PKCE) and /revoke on top of these methods. Logging in
+    mints a fresh ETAPI token via ETAPI /auth/login; every code and token we
+    issue maps to it, and verify_token hands it to EtapiTokenAuth through the
+    access token's `etapi_token` claim.
+
+    `passthrough` is `both` mode: a bearer that isn't one of ours is forwarded
+    to Trilium as a raw ETAPI token, exactly as in `token` mode.
+    """
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        store: AsyncKeyValue,
+        etapi: httpx.AsyncClient,
+        passthrough: bool,
+    ):
+        super().__init__(
+            base_url=base_url,
+            client_registration_options=ClientRegistrationOptions(enabled=True),
+            revocation_options=RevocationOptions(enabled=True),
+        )
+        self.store = store
+        self.etapi = etapi  # unauthenticated: only /auth/login and /auth/logout
+        self.passthrough = passthrough
+
+    async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
+        data = await self.store.get(client_id, collection="clients")
+        return OAuthClientInformationFull.model_validate(data) if data else None
+
+    async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        await self.store.put(
+            client_info.client_id,
+            client_info.model_dump(mode="json"),
+            collection="clients",
+        )
+
+    async def authorize(
+        self, client: OAuthClientInformationFull, params: AuthorizationParams
+    ) -> str:
+        pending_id = secrets.token_urlsafe(32)
+        await self.store.put(
+            pending_id,
+            {"client_id": client.client_id, "params": params.model_dump(mode="json")},
+            collection="pending",
+            ttl=PENDING_LOGIN_TTL,
+        )
+        return f"{str(self.base_url).rstrip('/')}/login?id={pending_id}"
+
+    async def load_authorization_code(
+        self, client: OAuthClientInformationFull, authorization_code: str
+    ) -> AuthorizationCode | None:
+        data = await self.store.get(authorization_code, collection="codes")
+        if not data or data["code"]["client_id"] != client.client_id:
+            return None
+        return AuthorizationCode.model_validate(data["code"])
+
+    async def exchange_authorization_code(
+        self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
+    ) -> OAuthToken:
+        data = await self.store.get(authorization_code.code, collection="codes")
+        if not data:
+            raise TokenError("invalid_grant", "Authorization code not found or already used.")
+        await self.store.delete(authorization_code.code, collection="codes")
+        return await self._issue(
+            client.client_id, authorization_code.scopes, data["etapi_token"]
+        )
+
+    async def load_refresh_token(
+        self, client: OAuthClientInformationFull, refresh_token: str
+    ) -> RefreshToken | None:
+        data = await self.store.get(refresh_token, collection="refresh")
+        if not data or data["client_id"] != client.client_id:
+            return None
+        return RefreshToken(
+            token=refresh_token,
+            client_id=data["client_id"],
+            scopes=data["scopes"],
+            expires_at=data["expires_at"],
+        )
+
+    async def exchange_refresh_token(
+        self,
+        client: OAuthClientInformationFull,
+        refresh_token: RefreshToken,
+        scopes: list[str],
+    ) -> OAuthToken:
+        data = await self.store.get(refresh_token.token, collection="refresh")
+        if not data:
+            raise TokenError("invalid_grant", "Refresh token not found or already used.")
+        if not set(scopes) <= set(refresh_token.scopes):
+            raise TokenError("invalid_scope", "Requested scopes exceed the original grant.")
+        # Rotate: the old pair dies, the minted ETAPI token lives on in the new one.
+        await self._drop(data["access"], refresh_token.token)
+        return await self._issue(
+            client.client_id, scopes or refresh_token.scopes, data["etapi_token"]
+        )
+
+    async def load_access_token(self, token: str) -> AccessToken | None:
+        data = await self.store.get(token, collection="access")
+        if not data:
+            return None
+        return AccessToken(
+            token=token,
+            client_id=data["client_id"],
+            scopes=data["scopes"],
+            expires_at=data["expires_at"],
+            claims={"etapi_token": data["etapi_token"]},
+        )
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        found = await self.load_access_token(token)
+        if found or not self.passthrough or token.startswith(OAUTH_TOKEN_PREFIX):
+            return found
+        # `both` mode: not ours, so it's a raw ETAPI token; Trilium judges it.
+        return AccessToken(
+            token=token, client_id="etapi-token", scopes=[],
+            claims={"etapi_token": token},
+        )
+
+    async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
+        if isinstance(token, RefreshToken):
+            data = await self.store.get(token.token, collection="refresh")
+            pair = (data["access"], token.token) if data else None
+        else:
+            data = await self.store.get(token.token, collection="access")
+            pair = (token.token, data["refresh"]) if data else None
+        if not pair:
+            return
+        await self._drop(*pair)
+        # Also delete the minted ETAPI token in Trilium. Best effort: the OAuth
+        # pair is already gone, so a failure here only leaves a stray token.
+        try:
+            await self.etapi.post(
+                "/auth/logout", headers={"Authorization": data["etapi_token"]}
+            )
+        except httpx.HTTPError:
+            pass
+
+    def get_routes(self, mcp_path: str | None = None) -> list[Route]:
+        return [
+            *super().get_routes(mcp_path),
+            Route("/login", self._login, methods=["GET", "POST"]),
+        ]
+
+    async def _login(self, request: Request):
+        form = await request.form() if request.method == "POST" else request.query_params
+        pending_id = form.get("id", "")
+        pending = (
+            await self.store.get(pending_id, collection="pending") if pending_id else None
+        )
+        if not pending:
+            return _dead_end_page(
+                "Login link expired or already used",
+                "Login links work once, for 10 minutes.",
+                400,
+            )
+        if pending.get("done"):
+            # A browser re-submitted a login that already succeeded (seen with
+            # claude.ai's connector flow). Mint nothing; say what happened.
+            return _dead_end_page(
+                "Login already completed",
+                "Your password was accepted and this login finished a moment "
+                "ago; the browser sent the form a second time. If your app "
+                "now shows the connector without tools, it dropped that "
+                "finished login.",
+                200,
+            )
+        params = AuthorizationParams.model_validate(pending["params"])
+        client = await self.get_client(pending["client_id"])
+        client_name = (client.client_name if client else None) or pending["client_id"]
+        redirect = str(params.redirect_uri)
+        page = (pending_id, client_name, urlsplit(redirect).netloc or redirect)
+        if request.method == "GET":
+            return _login_page(*page)
+
+        # The password goes straight to Trilium and is never stored or logged.
+        response = await self.etapi.post(
+            "/auth/login", json={"password": form.get("password", "")}
+        )
+        if not response.is_success:
+            return _login_page(
+                *page,
+                error=f"Trilium rejected the login (HTTP {response.status_code}).",
+                status=401,
+            )
+        # Keep a short-lived marker instead of deleting, so a replayed form gets
+        # an honest answer (see above) rather than "expired".
+        await self.store.put(
+            pending_id, {"done": True}, collection="pending", ttl=PENDING_LOGIN_TTL
+        )
+        code = AuthorizationCode(
+            code=OAUTH_TOKEN_PREFIX + secrets.token_urlsafe(32),
+            client_id=pending["client_id"],
+            scopes=params.scopes or [],
+            expires_at=time.time() + AUTH_CODE_TTL,
+            code_challenge=params.code_challenge,
+            redirect_uri=params.redirect_uri,
+            redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
+            resource=params.resource,
+        )
+        await self.store.put(
+            code.code,
+            {"code": code.model_dump(mode="json"), "etapi_token": response.json()["authToken"]},
+            collection="codes",
+            ttl=AUTH_CODE_TTL,
+        )
+        return RedirectResponse(
+            construct_redirect_uri(redirect, code=code.code, state=params.state),
+            status_code=302,
+        )
+
+    async def _issue(
+        self, client_id: str, scopes: list[str], etapi_token: str
+    ) -> OAuthToken:
+        access = OAUTH_TOKEN_PREFIX + secrets.token_urlsafe(32)
+        refresh = OAUTH_TOKEN_PREFIX + secrets.token_urlsafe(32)
+        now = int(time.time())
+        common = {"client_id": client_id, "scopes": scopes, "etapi_token": etapi_token}
+        await self.store.put(
+            access,
+            {**common, "refresh": refresh, "expires_at": now + ACCESS_TOKEN_TTL},
+            collection="access",
+            ttl=ACCESS_TOKEN_TTL,
+        )
+        # ponytail: a client that never comes back leaves its minted ETAPI token
+        # in Trilium after this TTL; delete it there by hand, or add a sweeper
+        # that logs out expired refresh entries if that list grows.
+        await self.store.put(
+            refresh,
+            {**common, "access": access, "expires_at": now + REFRESH_TOKEN_TTL},
+            collection="refresh",
+            ttl=REFRESH_TOKEN_TTL,
+        )
+        return OAuthToken(
+            access_token=access,
+            token_type="Bearer",
+            expires_in=ACCESS_TOKEN_TTL,
+            refresh_token=refresh,
+            scope=" ".join(scopes) or None,
+        )
+
+    async def _drop(self, access: str, refresh: str) -> None:
+        await self.store.delete(access, collection="access")
+        await self.store.delete(refresh, collection="refresh")
 
 
 def load_spec(spec_path: Path) -> dict:
@@ -271,21 +611,87 @@ def register_content_put_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
         return f"Updated content of attachment {attachmentId!r}."
 
 
-def build_server(client: httpx.AsyncClient | None = None) -> FastMCP:
+def etapi_url() -> str:
+    """TRILIUM_SERVER_URL with `/etapi` appended (see the spec's `servers`)."""
+    server_url = os.environ.get(SERVER_ENV, DEFAULT_SERVER_URL).rstrip("/")
+    return server_url if server_url.endswith("/etapi") else f"{server_url}/etapi"
+
+
+def resolve_auth_mode() -> str:
+    """Pick token / oauth / both from the environment.
+
+    Unset MCP_AUTH_MODE means `both` when OAuth is configured, else `token` with
+    a warning -- so an existing deployment keeps working after an image update.
+    An explicit oauth/both without its config is an error (-> startup_error).
+    """
+    mode = os.environ.get(AUTH_MODE_ENV, "").strip().lower()
+    missing = [
+        v for v in (BASE_URL_ENV, OAUTH_SECRET_ENV) if not os.environ.get(v, "").strip()
+    ]
+    if not mode:
+        if missing:
+            print(f"OAuth disabled: {' and '.join(missing)} not set; accepting raw "
+                  f"ETAPI tokens only.", file=sys.stderr)
+            return "token"
+        return "both"
+    if mode not in AUTH_MODES:
+        raise RuntimeError(
+            f"{AUTH_MODE_ENV}={mode!r} is invalid; use one of {', '.join(AUTH_MODES)}."
+        )
+    if mode != "token" and missing:
+        raise RuntimeError(f"{AUTH_MODE_ENV}={mode} requires {' and '.join(missing)}.")
+    return mode
+
+
+def build_oauth_provider(mode: str) -> TriliumOAuthProvider:
+    """OAuth provider on a Fernet-encrypted file store (same pattern as
+    FastMCP's own OAuthProxy)."""
+    base_url = os.environ[BASE_URL_ENV].strip().rstrip("/")
+    try:
+        validate_issuer_url(AnyHttpUrl(base_url))
+    except ValueError as e:
+        raise RuntimeError(
+            f"{BASE_URL_ENV}={base_url!r} is not a valid OAuth issuer: {e} "
+            f"(plain http is only allowed for localhost)."
+        ) from e
+    OAUTH_STORE_DIR.mkdir(parents=True, exist_ok=True)
+    files = FileTreeStore(
+        data_directory=OAUTH_STORE_DIR,
+        key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(OAUTH_STORE_DIR),
+        collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(
+            OAUTH_STORE_DIR
+        ),
+    )
+    store = FernetEncryptionWrapper(
+        key_value=files,
+        source_material=os.environ[OAUTH_SECRET_ENV],
+        salt="trilium-mcp-oauth",
+        # A changed secret turns stored state into misses: clients just log in again.
+        raise_on_decryption_error=False,
+    )
+    return TriliumOAuthProvider(
+        base_url=base_url,
+        store=store,
+        etapi=httpx.AsyncClient(base_url=etapi_url(), timeout=60),
+        passthrough=mode == "both",
+    )
+
+
+def build_server(
+    client: httpx.AsyncClient | None = None,
+    auth: TriliumOAuthProvider | None = None,
+) -> FastMCP:
     """Load the local OpenAPI spec and turn every documented ETAPI endpoint
     into a FastMCP tool. The ETAPI token is supplied per request by the client
     (see TokenCaptureMiddleware / EtapiTokenAuth), so no token is read here.
 
     `client` is injectable for testing; in production the default client targets
-    TRILIUM_SERVER_URL and authenticates from the per-request contextvar.
+    TRILIUM_SERVER_URL and authenticates from the per-request token. `auth`
+    enables OAuth (see TriliumOAuthProvider); None keeps plain token pass-through.
     """
     if client is None:
-        server_url = os.environ.get(SERVER_ENV, DEFAULT_SERVER_URL).rstrip("/")
-        # ETAPI endpoints live under /etapi (see the spec's `servers` list).
-        if not server_url.endswith("/etapi"):
-            server_url = f"{server_url}/etapi"
         client = httpx.AsyncClient(
-            base_url=server_url, auth=EtapiTokenAuth(), timeout=60
+            base_url=etapi_url(), auth=EtapiTokenAuth(), timeout=60
         )
 
     spec_path = Path(os.environ.get(SPEC_ENV, str(DEFAULT_SPEC)))
@@ -322,6 +728,7 @@ def build_server(client: httpx.AsyncClient | None = None) -> FastMCP:
         openapi_spec=spec,
         client=client,
         name="Trilium ETAPI MCP",
+        auth=auth,
         # The live ETAPI returns null for fields the spec types as plain
         # strings (e.g. branch.prefix), so response validation would reject
         # otherwise-successful calls. Return the real response instead.
@@ -350,8 +757,8 @@ def build_server(client: httpx.AsyncClient | None = None) -> FastMCP:
 
 def build_error_server(error: BaseException) -> FastMCP:
     """Stand-in MCP server that reports a startup failure over a live
-    connection instead of dying with an opaque error. Only reachable now if the
-    bundled OpenAPI spec is missing or unparseable.
+    connection instead of dying with an opaque error. Reached if the bundled
+    OpenAPI spec is missing/unparseable or the auth configuration is invalid.
     """
     summary = str(error).strip() or error.__class__.__name__
     detail = "".join(
@@ -359,8 +766,8 @@ def build_error_server(error: BaseException) -> FastMCP:
     ).strip()
     instructions = (
         f"This Trilium ETAPI MCP server FAILED TO START and exposes no Trilium "
-        f"tools.\n\nReason: {summary}\n\nThe bundled OpenAPI spec could not be "
-        f"loaded. Call the `startup_error` tool for the full error."
+        f"tools.\n\nReason: {summary}\n\nFix the configuration or bundled OpenAPI "
+        f"spec and restart. Call the `startup_error` tool for the full error."
     )
     mcp = FastMCP(
         name="Trilium ETAPI MCP (startup failed)",
@@ -379,9 +786,40 @@ def build_error_server(error: BaseException) -> FastMCP:
     return mcp
 
 
-def serve(mcp: FastMCP) -> None:
-    """Serve an MCP server over streamable HTTP behind the token-capture
-    middleware, using the MCP_* environment configuration."""
+class BearerPrefixMiddleware:
+    """`both` mode: turn a raw `Authorization: <etapi token>` header -- what
+    token-mode clients send -- into `Bearer <token>`, the only form FastMCP's
+    OAuth middleware reads. TriliumOAuthProvider.verify_token then passes it
+    through to Trilium. Pure ASGI, like TokenCaptureMiddleware.
+    """
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            headers = []
+            for name, value in scope.get("headers") or []:
+                if name == b"authorization" and value and b" " not in value.strip():
+                    value = b"Bearer " + value.strip()
+                headers.append((name, value))
+            scope = {**scope, "headers": headers}
+        await self.app(scope, receive, send)
+
+
+def wrap_app(inner, mode: str):
+    """Put the auth-mode's ASGI gate in front of FastMCP's app."""
+    if mode == "token":
+        return TokenCaptureMiddleware(inner)
+    if mode == "both":
+        return BearerPrefixMiddleware(inner)
+    return inner
+
+
+def serve(mcp: FastMCP, mode: str = "token") -> None:
+    """Serve an MCP server over streamable HTTP using the MCP_* environment
+    configuration. In `token` mode TokenCaptureMiddleware gates the endpoint;
+    otherwise FastMCP's OAuth middleware does (see TriliumOAuthProvider)."""
     host = os.environ.get(MCP_HOST_ENV, DEFAULT_HOST)
     port = int(os.environ.get(MCP_PORT_ENV, DEFAULT_PORT))
     path = os.environ.get(MCP_PATH_ENV, DEFAULT_PATH)
@@ -401,22 +839,26 @@ def serve(mcp: FastMCP) -> None:
         inner = mcp.http_app(path=path, host_origin_protection=False)
         print(f"Host protection OFF (any Host accepted) -- set "
               f"{MCP_ALLOWED_HOSTS_ENV} to restrict.", file=sys.stderr)
-    app = TokenCaptureMiddleware(inner)
+    app = wrap_app(inner, mode)
 
     print(f"Serving Trilium ETAPI MCP on http://{host}:{port}{path} "
-          f"(client supplies the ETAPI token via the Authorization header)",
+          f"(auth mode: {mode})",
           file=sys.stderr)
     uvicorn.run(app, host=host, port=port)
 
 
 def main():
+    mode = "token"
     try:
-        mcp = build_server()
+        mode = resolve_auth_mode()
+        auth = None if mode == "token" else build_oauth_provider(mode)
+        mcp = build_server(auth=auth)
     except Exception as e:
         print(f"Error: failed to build Trilium ETAPI MCP server: {e}",
               file=sys.stderr)
+        mode = "token"
         mcp = build_error_server(e)
-    serve(mcp)
+    serve(mcp, mode)
 
 
 if __name__ == "__main__":

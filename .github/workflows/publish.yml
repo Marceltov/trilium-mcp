@@ -116,6 +116,11 @@ jobs:
               environment:
                 # Service name of your existing Trilium on the same compose network.
                 TRILIUM_SERVER_URL: http://trilium:8080
+                # Optional — enables OAuth login for remote/app clients:
+                # MCP_BASE_URL: https://trilium-mcp.example
+                # MCP_OAUTH_SECRET: <long random string>
+              # volumes:
+              #   - mcp-oauth:/data   # keeps OAuth logins across restarts
               ports:
                 - "8081:8081"
           ```
@@ -140,7 +145,13 @@ jobs:
           claude mcp add trilium --scope user --transport http \
             https://trilium-mcp.example/mcp \
             --header "Authorization: YOUR_TRILIUM_ETAPI_TOKEN"
+
+          # Remote / app clients with OAuth enabled: URL only, log in once in the browser
+          claude mcp add trilium --scope user --transport http \
+            https://trilium-mcp.example/mcp
           ```
+
+          ETAPI tokens suit headless clients and the local LAN; OAuth suits remote access and app clients — see [Choosing an auth method](https://github.com/Marceltov/trilium-mcp/blob/__TAG__/README.md#choosing-an-auth-method).
 
           Full guide: [README](https://github.com/Marceltov/trilium-mcp/blob/__TAG__/README.md#quick-start)
           EOF

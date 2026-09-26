@@ -22,8 +22,8 @@ This starts two services (see [`docker-compose.yaml`](docker-compose.yaml)):
 
 | Service        | URL                          | Notes                                   |
 | -------------- | ---------------------------- | --------------------------------------- |
-| `trilium`      | http://localhost:8080        | Web UI + ETAPI (`/etapi`)               |
-| `trilium-mcp`  | http://localhost:8081/mcp    | MCP endpoint (built from local `Dockerfile`) |
+| `trilium`      | http://localhost:9090        | Web UI + ETAPI (`/etapi`)               |
+| `trilium-mcp`  | http://localhost:9091/mcp    | MCP endpoint (built from local `Dockerfile`) |
 
 The `trilium-mcp` service uses `build: .`, so it always runs your local code.
 After changing anything under `app/`, rebuild with `docker compose up -d --build`.
@@ -31,7 +31,7 @@ After changing anything under `app/`, rebuild with `docker compose up -d --build
 Check the MCP server is up:
 
 ```bash
-curl http://localhost:8081/health   # -> ok
+curl http://localhost:9091/health   # -> ok
 ```
 
 ### Seeded instance credentials
@@ -39,7 +39,7 @@ curl http://localhost:8081/health   # -> ok
 Both are committed as a **development fixture** and are scoped to this disposable
 instance only — do not reuse them anywhere real.
 
-- **Trilium web UI:** to log in to the seed instance at http://localhost:8080,
+- **Trilium web UI:** to log in to the seed instance at http://localhost:9090,
   use the password `trilium-mcp`.
 - **ETAPI token:** in [`etapi.token`](etapi.token) — the credential the MCP client
   passes in the `Authorization` header.
@@ -54,8 +54,14 @@ Point any MCP client at the endpoint with the dev token:
 
 ```bash
 claude mcp add trilium-dev --transport http \
-  http://localhost:8081/mcp \
+  http://localhost:9091/mcp \
   --header "Authorization: $(cat etapi.token)"
+```
+
+The dev stack also runs with OAuth enabled (`MCP_BASE_URL=http://localhost:9091`), so you can exercise the browser flow instead: register the URL without a header, run `/mcp` in Claude Code to authenticate, and log in with the fixture password `trilium-mcp`.
+
+```bash
+claude mcp add trilium-dev-oauth --transport http http://localhost:9091/mcp
 ```
 
 ### Resetting the fixture
