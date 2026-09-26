@@ -124,7 +124,7 @@ Register the URL with no header; the client opens the login page on first use:
 claude mcp add trilium --scope user --transport http https://trilium-mcp.example.com/mcp
 ```
 
-In Claude Code, run `/mcp` and pick the server to authenticate. On claude.ai (*Settings → Connectors → Add custom connector*), make sure you are **already logged in to claude.ai** before adding the connector: if claude.ai asks you to log in partway through, it can drop the finished OAuth login, and the connector stays unauthenticated. Just add it again. Each client gets its own ETAPI token, visible and deletable under *Options → ETAPI* — deleting it there, or revoking the OAuth token, disconnects just that client.
+In Claude Code, run `/mcp` and pick the server to authenticate. On claude.ai (*Settings → Connectors → Add custom connector*), make sure you are **already logged in to claude.ai** before adding the connector: if claude.ai asks you to log in partway through, it can drop the finished OAuth login, and the connector stays unauthenticated with no tools. Remove that connector and add it again; the second attempt goes straight through. Each client gets its own ETAPI token, visible and deletable under *Options → ETAPI* — deleting it there, or revoking the OAuth token, disconnects just that client.
 
 ### ETAPI token (headless and LAN)
 
