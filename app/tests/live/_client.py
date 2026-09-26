@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import os
 from pathlib import Path
 
 import httpx
@@ -11,19 +10,13 @@ from fastmcp.client.transports import StreamableHttpTransport
 
 # app/tests/live/_client.py -> parents: [live, tests, app, <repo root>]
 REPO_ROOT = Path(__file__).resolve().parents[3]
-MCP_URL = os.environ.get("TRILIUM_MCP_URL", "http://localhost:9091/mcp")
+# Pinned to the in-repo throwaway fixture (docker-compose.yaml, seeded from
+# trilium-data/). Deliberately NOT overridable from the environment: the trilium
+# plugin exports TRILIUM_MCP_URL / TRILIUM_ETAPI_TOKEN for a *real* instance into
+# every shell, and these tests create and delete notes.
+MCP_URL = "http://localhost:9091/mcp"
 HEALTH_URL = str(httpx.URL(MCP_URL).copy_with(path="/health", query=None))
-
-
-def _token() -> str | None:
-    tok = os.environ.get("TRILIUM_ETAPI_TOKEN")
-    if tok:
-        return tok.strip()
-    token_file = REPO_ROOT / "etapi.token"
-    return token_file.read_text().strip() if token_file.exists() else None
-
-
-TOKEN = _token()
+TOKEN = (REPO_ROOT / "etapi.token").read_text().strip()
 
 _reachable: bool | None = None
 
