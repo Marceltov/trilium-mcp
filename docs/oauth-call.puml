@@ -1,0 +1,42 @@
+@startuml oauth-call
+!include theme.iuml
+title Trilium ETAPI MCP — tool call in oauth / both mode
+
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+autonumber
+
+actor "MCP client" as Client
+
+box "trilium-mcp (this repo)"
+    participant "BearerPrefix\nMiddleware\n(both mode)" as BP #F4C48D
+    participant "FastMCP\nauth + tools" as MCP #98D486
+    participant "TriliumOAuthProvider\n.verify_token" as AS #F4C48D
+    database "mcp-oauth\n(encrypted)" as Store
+    participant "httpx client\n+ EtapiTokenAuth" as HTTP #F2A7A1
+end box
+
+participant "Trilium\nETAPI" as Trilium
+
+Client -> BP : POST /mcp\nAuthorization: Bearer <tmcp_ token>\nor raw <ETAPI token>
+BP -> BP : raw header → "Bearer <token>"
+BP -> MCP : forward
+MCP -> AS : verify_token(token)
+AS -> Store : look up
+alt issued by us (tmcp_)
+    Store --> AS : mapped ETAPI token
+    AS --> MCP : claims.etapi_token = mapped token
+else not ours, both mode
+    AS --> MCP : claims.etapi_token = the raw token
+else expired / revoked tmcp_ token, or oauth mode
+    AS --> MCP : none
+    MCP --> Client : 401 → client refreshes or logs in
+end
+MCP -> HTTP : invoke mapped ETAPI operation
+HTTP -> HTTP : get_access_token()\n.claims["etapi_token"]
+HTTP -> Trilium : /etapi/…\nAuthorization: <ETAPI token>
+Trilium --> HTTP : JSON
+HTTP --> MCP : response
+MCP --> Client : MCP tool result
+
+@enduml

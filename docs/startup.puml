@@ -1,0 +1,30 @@
+@startuml startup
+!include theme.iuml
+title Trilium ETAPI MCP — startup and health
+
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+autonumber
+
+actor "Container runtime\n/ monitor" as Ops
+participant "main()" as Main #F4C48D
+participant "FastMCP\n(OpenAPI-derived tools)" as MCP #98D486
+
+[-> Main : start
+activate Main
+Main -> Main : resolve_auth_mode()\n(MCP_AUTH_MODE, MCP_BASE_URL,\nMCP_OAUTH_SECRET)
+Main -> MCP : build_server()
+activate MCP
+MCP -> MCP : load bundled\ntrilium-etapi.openapi
+MCP -> MCP : FastMCP.from_openapi\n→ ~40 tools
+MCP --> Main : server
+deactivate MCP
+note right of Main : If the spec or the auth config is\ninvalid, a startup_error-only server\nis served instead of crashing.
+Main -> Main : serve() behind the\nauth-mode gate (wrap_app)
+deactivate Main
+
+== Health check (always unauthenticated) ==
+Ops -> MCP : GET /health
+MCP --> Ops : 200 "ok"
+
+@enduml

@@ -1,0 +1,26 @@
+@startuml overview-oauth
+!include theme.iuml
+title Trilium ETAPI MCP — OAuth (remote access, app clients)
+
+skinparam responseMessageBelowArrow true
+autonumber
+
+actor "MCP client\n(claude.ai, desktop, IDE)" as Client
+participant "trilium-mcp\n(this repo)" as Sidecar #98D486
+participant "Trilium\nETAPI" as Trilium
+
+== Once per client ==
+Client -> Sidecar : browser login\nwith the Trilium password
+Sidecar -> Trilium : /auth/login
+Trilium --> Sidecar : ETAPI token minted\nfor this client
+Sidecar --> Client : OAuth access + refresh token
+
+== Every tool call ==
+Client -> Sidecar : MCP tool call over HTTP\nAuthorization: Bearer <access token>
+Sidecar -> Trilium : mapped ETAPI token forwarded to /etapi
+Trilium --> Sidecar : notes data
+Sidecar --> Client : MCP tool result
+
+note over Sidecar : Stores the minted ETAPI tokens\nencrypted; the client only ever\nholds opaque OAuth tokens.
+
+@enduml
