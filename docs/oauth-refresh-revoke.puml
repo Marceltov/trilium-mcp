@@ -1,0 +1,30 @@
+@startuml oauth-refresh-revoke
+!include theme.iuml
+title Trilium ETAPI MCP — OAuth refresh and revoke
+
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+autonumber
+
+participant "MCP client\n(app)" as Client
+
+box "trilium-mcp (this repo)"
+    participant "TriliumOAuthProvider\n(/token /revoke)" as AS #F4C48D
+    database "mcp-oauth\n(encrypted)" as Store
+end box
+
+participant "Trilium\nETAPI" as Trilium
+
+== Refresh (access token expired) ==
+Client -> AS : POST /token\n(grant_type=refresh_token)
+AS -> Store : drop old pair
+AS -> Store : new tmcp_ pair → same ETAPI token
+AS --> Client : new access + refresh token
+
+== Revoke (disconnect this client) ==
+Client -> AS : POST /revoke
+AS -> Store : drop pair
+AS -> Trilium : POST /auth/logout
+note right of Trilium : Deletes the ETAPI token\nminted for this client.
+
+@enduml

@@ -223,36 +223,79 @@ it (rather than failing with an opaque connection error).
 
 ## How it works
 
-At a glance, trilium-mcp forwards the client's ETAPI token straight through to Trilium — or, with OAuth, the ETAPI token it minted for that client at login:
+trilium-mcp turns every ETAPI endpoint into an MCP tool and forwards each call to Trilium with an ETAPI token — either the one the client sent, or, with OAuth, the one it minted for that client at login.
+
+### ETAPI token
 
 <p align="center">
-  <img src="docs/sequence-overview.png" alt="Both auth paths: a tool call with an ETAPI token forwarded to Trilium, and an OAuth login that mints an ETAPI token which later tool calls use" width="560">
+  <img src="docs/overview-token.png" alt="A tool call with an ETAPI token, forwarded to Trilium unchanged" width="560">
 </p>
 
 <details>
-<summary>Detailed sequence (startup, auth gate, token pass-through)</summary>
+<summary>Detailed: tool call in token mode</summary>
 
 <p></p>
 
-Startup builds the tools from the OpenAPI spec, the middleware rejects any request without an
-`Authorization` header, and the token is carried per request from the middleware to the outgoing
-ETAPI call:
+The middleware rejects any request without an `Authorization` header, and the token is carried per request from the middleware to the outgoing ETAPI call:
 
 <p align="center">
-  <img src="docs/sequence.png" alt="Detailed sequence: startup, health check, missing-token rejection, and an authenticated tool call" width="720">
+  <img src="docs/token-call.png" alt="Token mode: missing-token 401, then an authenticated tool call through TokenCaptureMiddleware and EtapiTokenAuth" width="720">
 </p>
 
 </details>
 
+### OAuth
+
+<p align="center">
+  <img src="docs/overview-oauth.png" alt="A one-time browser login mints an ETAPI token; later tool calls use an OAuth access token mapped to it" width="560">
+</p>
+
 <details>
-<summary>Detailed OAuth sequence (discovery, login, tool call, refresh, revoke)</summary>
+<summary>Detailed: login (discovery, registration, password, code exchange)</summary>
 
 <p></p>
 
 The client discovers the OAuth endpoints from the `401`, registers itself, and sends the user to the login page. The Trilium password is exchanged once for a fresh ETAPI token; the client only ever holds opaque `tmcp_` tokens that map to it:
 
 <p align="center">
-  <img src="docs/sequence-oauth.png" alt="OAuth sequence: discovery and registration, browser login minting an ETAPI token, tool call with the mapped token, refresh and revoke" width="720">
+  <img src="docs/oauth-login.png" alt="OAuth login: discovery and registration, password login minting an ETAPI token, code exchange for tmcp_ tokens" width="720">
+</p>
+
+</details>
+
+<details>
+<summary>Detailed: tool call in oauth / both mode</summary>
+
+<p></p>
+
+`verify_token` maps a `tmcp_` token to its ETAPI token; in `both` mode any other token is passed through as a raw ETAPI token, and an expired `tmcp_` token gets a `401` so the client refreshes:
+
+<p align="center">
+  <img src="docs/oauth-call.png" alt="OAuth tool call: bearer prefixing, verify_token outcomes, and the ETAPI call with the mapped token" width="720">
+</p>
+
+</details>
+
+<details>
+<summary>Detailed: refresh and revoke</summary>
+
+<p></p>
+
+<p align="center">
+  <img src="docs/oauth-refresh-revoke.png" alt="Refresh rotates the token pair onto the same ETAPI token; revoke drops the pair and deletes the ETAPI token in Trilium" width="720">
+</p>
+
+</details>
+
+### Startup and health
+
+<details>
+<summary>Detailed: startup, startup_error fallback, health check</summary>
+
+<p></p>
+
+<p align="center">
+  <img src="docs/startup.png" alt="Startup: resolve auth mode, build tools from the OpenAPI spec, fall back to startup_error, serve; health check" width="640">
 </p>
 
 </details>

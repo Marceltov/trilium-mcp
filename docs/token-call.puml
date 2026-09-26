@@ -1,12 +1,12 @@
-@startuml sequence
+@startuml token-call
 !include theme.iuml
-title Trilium ETAPI MCP — request flow (token pass-through)
+title Trilium ETAPI MCP — tool call with an ETAPI token (token mode)
 
 skinparam responseMessageBelowArrow true
 skinparam sequenceMessageAlign center
 autonumber
 
-actor "MCP client\n(Claude Code, …)" as Client
+actor "MCP client" as Client
 
 box "trilium-mcp (this repo)"
     participant "TokenCapture\nMiddleware\n(ASGI)" as MW #F4C48D
@@ -16,23 +16,11 @@ end box
 
 participant "Trilium\nETAPI" as Trilium
 
-== Startup ==
-[-> MCP : build_server()
-activate MCP
-MCP -> MCP : load bundled\ntrilium-etapi.openapi
-MCP -> MCP : FastMCP.from_openapi\n→ ~40 tools
-deactivate MCP
-note over MCP : If the spec fails to load, a\nstartup_error-only server is served instead.
-
-== Health check (unauthenticated) ==
-Client -> MW : GET /health
-MW --> Client : 200 "ok"
-
 == Missing token (rejected before any tool) ==
 Client -> MW : POST /mcp\n(no Authorization header)
 MW --> Client : 401\nWWW-Authenticate: Bearer
 
-== Tool call (authenticated) ==
+== Tool call ==
 Client -> MW : POST /mcp\nAuthorization: <token>\n(tool call, e.g. searchNotes)
 activate MW
 MW -> MW : stash token in\n_incoming_auth (contextvar)
