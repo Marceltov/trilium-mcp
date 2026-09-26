@@ -17,7 +17,9 @@
 
 import io
 import os
+import secrets
 import sys
+import time
 import traceback
 import zipfile
 from contextvars import ContextVar
@@ -27,8 +29,13 @@ import httpx
 import uvicorn
 import yaml
 from fastmcp import FastMCP
+from fastmcp.server.auth import AccessToken, OAuthProvider
+from fastmcp.server.auth.auth import ClientRegistrationOptions, RevocationOptions
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.providers.openapi import MCPType, OpenAPITool, RouteMap
+from key_value.aio.protocols import AsyncKeyValue
+from mcp.server.auth.provider import AuthorizationCode, RefreshToken, TokenError
+from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
@@ -58,6 +65,14 @@ EXPORT_FORMATS = ("markdown", "html")
 EXPORT_DEFAULT_FORMAT = "markdown"
 # Cap the returned text so a huge subtree can't blow up the client context.
 MAX_EXPORT_CHARS = 200_000
+
+# OAuth (see TriliumOAuthProvider). Issued codes/tokens carry this prefix so a
+# stale one is recognizably ours and is never mistaken for a raw ETAPI token.
+OAUTH_TOKEN_PREFIX = "tmcp_"
+PENDING_LOGIN_TTL = 10 * 60
+AUTH_CODE_TTL = 5 * 60
+ACCESS_TOKEN_TTL = 60 * 60
+REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60
 
 # Per-request holder for the incoming client Authorization header. Populated by
 # TokenCaptureMiddleware and read by EtapiTokenAuth when calling Trilium.
@@ -129,6 +144,172 @@ class TokenCaptureMiddleware:
             await self.app(scope, receive, send)
         finally:
             _incoming_auth.reset(token)
+
+
+class TriliumOAuthProvider(OAuthProvider):
+    """OAuth 2.1 authorization server whose login is the Trilium password.
+
+    FastMCP/the MCP SDK serve discovery, dynamic client registration,
+    /authorize, /token (PKCE) and /revoke on top of these methods. Logging in
+    mints a fresh ETAPI token via ETAPI /auth/login; every code and token we
+    issue maps to it, and verify_token hands it to EtapiTokenAuth through the
+    access token's `etapi_token` claim.
+
+    `passthrough` is `both` mode: a bearer that isn't one of ours is forwarded
+    to Trilium as a raw ETAPI token, exactly as in `token` mode.
+    """
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        store: AsyncKeyValue,
+        etapi: httpx.AsyncClient,
+        passthrough: bool,
+    ):
+        super().__init__(
+            base_url=base_url,
+            client_registration_options=ClientRegistrationOptions(enabled=True),
+            revocation_options=RevocationOptions(enabled=True),
+        )
+        self.store = store
+        self.etapi = etapi  # unauthenticated: only /auth/login and /auth/logout
+        self.passthrough = passthrough
+
+    async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
+        data = await self.store.get(client_id, collection="clients")
+        return OAuthClientInformationFull.model_validate(data) if data else None
+
+    async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        await self.store.put(
+            client_info.client_id,
+            client_info.model_dump(mode="json"),
+            collection="clients",
+        )
+
+    async def load_authorization_code(
+        self, client: OAuthClientInformationFull, authorization_code: str
+    ) -> AuthorizationCode | None:
+        data = await self.store.get(authorization_code, collection="codes")
+        if not data or data["code"]["client_id"] != client.client_id:
+            return None
+        return AuthorizationCode.model_validate(data["code"])
+
+    async def exchange_authorization_code(
+        self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
+    ) -> OAuthToken:
+        data = await self.store.get(authorization_code.code, collection="codes")
+        if not data:
+            raise TokenError("invalid_grant", "Authorization code not found or already used.")
+        await self.store.delete(authorization_code.code, collection="codes")
+        return await self._issue(
+            client.client_id, authorization_code.scopes, data["etapi_token"]
+        )
+
+    async def load_refresh_token(
+        self, client: OAuthClientInformationFull, refresh_token: str
+    ) -> RefreshToken | None:
+        data = await self.store.get(refresh_token, collection="refresh")
+        if not data or data["client_id"] != client.client_id:
+            return None
+        return RefreshToken(
+            token=refresh_token,
+            client_id=data["client_id"],
+            scopes=data["scopes"],
+            expires_at=data["expires_at"],
+        )
+
+    async def exchange_refresh_token(
+        self,
+        client: OAuthClientInformationFull,
+        refresh_token: RefreshToken,
+        scopes: list[str],
+    ) -> OAuthToken:
+        data = await self.store.get(refresh_token.token, collection="refresh")
+        if not data:
+            raise TokenError("invalid_grant", "Refresh token not found or already used.")
+        if not set(scopes) <= set(refresh_token.scopes):
+            raise TokenError("invalid_scope", "Requested scopes exceed the original grant.")
+        # Rotate: the old pair dies, the minted ETAPI token lives on in the new one.
+        await self._drop(data["access"], refresh_token.token)
+        return await self._issue(
+            client.client_id, scopes or refresh_token.scopes, data["etapi_token"]
+        )
+
+    async def load_access_token(self, token: str) -> AccessToken | None:
+        data = await self.store.get(token, collection="access")
+        if not data:
+            return None
+        return AccessToken(
+            token=token,
+            client_id=data["client_id"],
+            scopes=data["scopes"],
+            expires_at=data["expires_at"],
+            claims={"etapi_token": data["etapi_token"]},
+        )
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        found = await self.load_access_token(token)
+        if found or not self.passthrough or token.startswith(OAUTH_TOKEN_PREFIX):
+            return found
+        # `both` mode: not ours, so it's a raw ETAPI token; Trilium judges it.
+        return AccessToken(
+            token=token, client_id="etapi-token", scopes=[],
+            claims={"etapi_token": token},
+        )
+
+    async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
+        if isinstance(token, RefreshToken):
+            data = await self.store.get(token.token, collection="refresh")
+            pair = (data["access"], token.token) if data else None
+        else:
+            data = await self.store.get(token.token, collection="access")
+            pair = (token.token, data["refresh"]) if data else None
+        if not pair:
+            return
+        await self._drop(*pair)
+        # Also delete the minted ETAPI token in Trilium. Best effort: the OAuth
+        # pair is already gone, so a failure here only leaves a stray token.
+        try:
+            await self.etapi.post(
+                "/auth/logout", headers={"Authorization": data["etapi_token"]}
+            )
+        except httpx.HTTPError:
+            pass
+
+    async def _issue(
+        self, client_id: str, scopes: list[str], etapi_token: str
+    ) -> OAuthToken:
+        access = OAUTH_TOKEN_PREFIX + secrets.token_urlsafe(32)
+        refresh = OAUTH_TOKEN_PREFIX + secrets.token_urlsafe(32)
+        now = int(time.time())
+        common = {"client_id": client_id, "scopes": scopes, "etapi_token": etapi_token}
+        await self.store.put(
+            access,
+            {**common, "refresh": refresh, "expires_at": now + ACCESS_TOKEN_TTL},
+            collection="access",
+            ttl=ACCESS_TOKEN_TTL,
+        )
+        # ponytail: a client that never comes back leaves its minted ETAPI token
+        # in Trilium after this TTL; delete it there by hand, or add a sweeper
+        # that logs out expired refresh entries if that list grows.
+        await self.store.put(
+            refresh,
+            {**common, "access": access, "expires_at": now + REFRESH_TOKEN_TTL},
+            collection="refresh",
+            ttl=REFRESH_TOKEN_TTL,
+        )
+        return OAuthToken(
+            access_token=access,
+            token_type="Bearer",
+            expires_in=ACCESS_TOKEN_TTL,
+            refresh_token=refresh,
+            scope=" ".join(scopes) or None,
+        )
+
+    async def _drop(self, access: str, refresh: str) -> None:
+        await self.store.delete(access, collection="access")
+        await self.store.delete(refresh, collection="refresh")
 
 
 def load_spec(spec_path: Path) -> dict:
