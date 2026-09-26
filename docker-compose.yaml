@@ -33,6 +33,8 @@ services:
       # encrypts the OAuth store. Dev-only values -- never reuse them.
       MCP_BASE_URL: http://localhost:9091
       MCP_OAUTH_SECRET: dev-only-oauth-secret
+      # Serve the ChatGPT Custom GPT Action (spec + REST proxy) under /chatgpt.
+      CHATGPT_ACTIONS: "true"
     volumes:
       - mcp-oauth:/data
     ports:
