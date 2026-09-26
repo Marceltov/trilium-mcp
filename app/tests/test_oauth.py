@@ -213,3 +213,62 @@ def test_expired_login_link_is_rejected():
 
     r = TestClient(Starlette(routes=app)).get("/login", params={"id": "nope"})
     assert r.status_code == 400
+
+
+import pytest
+
+OAUTH_VARS = {"MCP_BASE_URL": "https://mcp.example", "MCP_OAUTH_SECRET": "s3cret-s3cret"}
+
+
+@pytest.mark.parametrize(
+    "mode, env, expected",
+    [
+        (None, {}, "token"),              # unset + no OAuth vars: safe upgrade path
+        (None, OAUTH_VARS, "both"),       # unset + vars: default is both
+        ("token", {}, "token"),
+        ("oauth", OAUTH_VARS, "oauth"),
+        ("BOTH", OAUTH_VARS, "both"),
+    ],
+)
+def test_resolve_auth_mode(monkeypatch, mode, env, expected):
+    for var in ("MCP_AUTH_MODE", *OAUTH_VARS):
+        monkeypatch.delenv(var, raising=False)
+    if mode:
+        monkeypatch.setenv("MCP_AUTH_MODE", mode)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    assert server.resolve_auth_mode() == expected
+
+
+@pytest.mark.parametrize("mode", ["oauth", "both", "bogus"])
+def test_resolve_auth_mode_fails_loudly_when_explicit(monkeypatch, mode):
+    for var in OAUTH_VARS:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("MCP_AUTH_MODE", mode)
+    with pytest.raises(RuntimeError, match="MCP_"):
+        server.resolve_auth_mode()
+
+
+def test_encrypted_store_round_trips(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "OAUTH_STORE_DIR", tmp_path)
+    for k, v in OAUTH_VARS.items():
+        monkeypatch.setenv(k, v)
+    p = server.build_oauth_provider("both")
+
+    async def go():
+        await p.register_client(CLIENT)
+        return await p.get_client("c1")
+
+    assert asyncio.run(go()).client_id == "c1"
+    stored = b"".join(f.read_bytes() for f in tmp_path.rglob("*.json"))
+    assert b"localhost:9" not in stored  # encrypted at rest
+
+
+def test_plain_http_base_url_fails_at_startup(monkeypatch, tmp_path):
+    # OAuth issuers must be HTTPS (localhost excepted); catch it while building,
+    # so main() shows startup_error instead of serve() crashing later.
+    monkeypatch.setattr(server, "OAUTH_STORE_DIR", tmp_path)
+    monkeypatch.setenv("MCP_BASE_URL", "http://192.168.1.50:8081")
+    monkeypatch.setenv("MCP_OAUTH_SECRET", "s3cret-s3cret")
+    with pytest.raises(RuntimeError, match="MCP_BASE_URL.*HTTPS"):
+        server.build_oauth_provider("both")

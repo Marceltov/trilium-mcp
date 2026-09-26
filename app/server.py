@@ -36,6 +36,12 @@ from fastmcp.server.auth.auth import ClientRegistrationOptions, RevocationOption
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.providers.openapi import MCPType, OpenAPITool, RouteMap
 from key_value.aio.protocols import AsyncKeyValue
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1CollectionSanitizationStrategy,
+    FileTreeV1KeySanitizationStrategy,
+)
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from mcp.server.auth.provider import (
     AuthorizationCode,
     AuthorizationParams,
@@ -43,7 +49,9 @@ from mcp.server.auth.provider import (
     TokenError,
     construct_redirect_uri,
 )
+from mcp.server.auth.routes import validate_issuer_url
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from pydantic import AnyHttpUrl
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from starlette.routing import Route
@@ -60,12 +68,17 @@ MCP_HOST_ENV = "MCP_HOST"                  # Interface the MCP server binds to
 MCP_PORT_ENV = "MCP_PORT"                  # Port the MCP server listens on
 MCP_PATH_ENV = "MCP_PATH"                  # HTTP path the MCP endpoint is served at
 MCP_ALLOWED_HOSTS_ENV = "MCP_ALLOWED_HOSTS"  # comma-separated Host allowlist (see serve)
+AUTH_MODE_ENV = "MCP_AUTH_MODE"            # token | oauth | both (see resolve_auth_mode)
+BASE_URL_ENV = "MCP_BASE_URL"              # public URL clients reach us at (OAuth issuer)
+OAUTH_SECRET_ENV = "MCP_OAUTH_SECRET"      # encrypts the OAuth store at rest
 
 DEFAULT_SERVER_URL = "http://trilium:8080"
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8081
 DEFAULT_PATH = "/mcp"
 HEALTH_PATH = "/health"
+AUTH_MODES = ("token", "oauth", "both")
+OAUTH_STORE_DIR = Path("/data/oauth")      # mount a volume at /data to keep logins
 
 # exportNoteSubtree returns a binary ZIP, which FastMCP's OpenAPI machinery
 # tries to JSON-decode (crashing on the first non-UTF-8 byte). We exclude the
@@ -566,6 +579,66 @@ def etapi_url() -> str:
     return server_url if server_url.endswith("/etapi") else f"{server_url}/etapi"
 
 
+def resolve_auth_mode() -> str:
+    """Pick token / oauth / both from the environment.
+
+    Unset MCP_AUTH_MODE means `both` when OAuth is configured, else `token` with
+    a warning -- so an existing deployment keeps working after an image update.
+    An explicit oauth/both without its config is an error (-> startup_error).
+    """
+    mode = os.environ.get(AUTH_MODE_ENV, "").strip().lower()
+    missing = [
+        v for v in (BASE_URL_ENV, OAUTH_SECRET_ENV) if not os.environ.get(v, "").strip()
+    ]
+    if not mode:
+        if missing:
+            print(f"OAuth disabled: {' and '.join(missing)} not set; accepting raw "
+                  f"ETAPI tokens only.", file=sys.stderr)
+            return "token"
+        return "both"
+    if mode not in AUTH_MODES:
+        raise RuntimeError(
+            f"{AUTH_MODE_ENV}={mode!r} is invalid; use one of {', '.join(AUTH_MODES)}."
+        )
+    if mode != "token" and missing:
+        raise RuntimeError(f"{AUTH_MODE_ENV}={mode} requires {' and '.join(missing)}.")
+    return mode
+
+
+def build_oauth_provider(mode: str) -> TriliumOAuthProvider:
+    """OAuth provider on a Fernet-encrypted file store (same pattern as
+    FastMCP's own OAuthProxy)."""
+    base_url = os.environ[BASE_URL_ENV].strip().rstrip("/")
+    try:
+        validate_issuer_url(AnyHttpUrl(base_url))
+    except ValueError as e:
+        raise RuntimeError(
+            f"{BASE_URL_ENV}={base_url!r} is not a valid OAuth issuer: {e} "
+            f"(plain http is only allowed for localhost)."
+        ) from e
+    OAUTH_STORE_DIR.mkdir(parents=True, exist_ok=True)
+    files = FileTreeStore(
+        data_directory=OAUTH_STORE_DIR,
+        key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(OAUTH_STORE_DIR),
+        collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(
+            OAUTH_STORE_DIR
+        ),
+    )
+    store = FernetEncryptionWrapper(
+        key_value=files,
+        source_material=os.environ[OAUTH_SECRET_ENV],
+        salt="trilium-mcp-oauth",
+        # A changed secret turns stored state into misses: clients just log in again.
+        raise_on_decryption_error=False,
+    )
+    return TriliumOAuthProvider(
+        base_url=base_url,
+        store=store,
+        etapi=httpx.AsyncClient(base_url=etapi_url(), timeout=60),
+        passthrough=mode == "both",
+    )
+
+
 def build_server(
     client: httpx.AsyncClient | None = None,
     auth: TriliumOAuthProvider | None = None,
@@ -646,8 +719,8 @@ def build_server(
 
 def build_error_server(error: BaseException) -> FastMCP:
     """Stand-in MCP server that reports a startup failure over a live
-    connection instead of dying with an opaque error. Only reachable now if the
-    bundled OpenAPI spec is missing or unparseable.
+    connection instead of dying with an opaque error. Reached if the bundled
+    OpenAPI spec is missing/unparseable or the auth configuration is invalid.
     """
     summary = str(error).strip() or error.__class__.__name__
     detail = "".join(
@@ -655,8 +728,8 @@ def build_error_server(error: BaseException) -> FastMCP:
     ).strip()
     instructions = (
         f"This Trilium ETAPI MCP server FAILED TO START and exposes no Trilium "
-        f"tools.\n\nReason: {summary}\n\nThe bundled OpenAPI spec could not be "
-        f"loaded. Call the `startup_error` tool for the full error."
+        f"tools.\n\nReason: {summary}\n\nFix the configuration or bundled OpenAPI "
+        f"spec and restart. Call the `startup_error` tool for the full error."
     )
     mcp = FastMCP(
         name="Trilium ETAPI MCP (startup failed)",
@@ -675,9 +748,10 @@ def build_error_server(error: BaseException) -> FastMCP:
     return mcp
 
 
-def serve(mcp: FastMCP) -> None:
-    """Serve an MCP server over streamable HTTP behind the token-capture
-    middleware, using the MCP_* environment configuration."""
+def serve(mcp: FastMCP, mode: str = "token") -> None:
+    """Serve an MCP server over streamable HTTP using the MCP_* environment
+    configuration. In `token` mode TokenCaptureMiddleware gates the endpoint;
+    otherwise FastMCP's OAuth middleware does (see TriliumOAuthProvider)."""
     host = os.environ.get(MCP_HOST_ENV, DEFAULT_HOST)
     port = int(os.environ.get(MCP_PORT_ENV, DEFAULT_PORT))
     path = os.environ.get(MCP_PATH_ENV, DEFAULT_PATH)
@@ -697,22 +771,26 @@ def serve(mcp: FastMCP) -> None:
         inner = mcp.http_app(path=path, host_origin_protection=False)
         print(f"Host protection OFF (any Host accepted) -- set "
               f"{MCP_ALLOWED_HOSTS_ENV} to restrict.", file=sys.stderr)
-    app = TokenCaptureMiddleware(inner)
+    app = TokenCaptureMiddleware(inner) if mode == "token" else inner
 
     print(f"Serving Trilium ETAPI MCP on http://{host}:{port}{path} "
-          f"(client supplies the ETAPI token via the Authorization header)",
+          f"(auth mode: {mode})",
           file=sys.stderr)
     uvicorn.run(app, host=host, port=port)
 
 
 def main():
+    mode = "token"
     try:
-        mcp = build_server()
+        mode = resolve_auth_mode()
+        auth = None if mode == "token" else build_oauth_provider(mode)
+        mcp = build_server(auth=auth)
     except Exception as e:
         print(f"Error: failed to build Trilium ETAPI MCP server: {e}",
               file=sys.stderr)
+        mode = "token"
         mcp = build_error_server(e)
-    serve(mcp)
+    serve(mcp, mode)
 
 
 if __name__ == "__main__":
