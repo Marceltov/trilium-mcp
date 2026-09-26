@@ -168,29 +168,52 @@ class TokenCaptureMiddleware:
             _incoming_auth.reset(token)
 
 
-def _login_page(pending_id="", client_name="", redirect_host="", error="", status=200):
-    """The one page a human sees: who is asking, where the code goes, password."""
-    e = html.escape
-    form = "" if not pending_id else (
-        f"<p><b>{e(client_name)}</b> wants access to your Trilium notes. After "
-        f"login you will be sent to <b>{e(redirect_host)}</b>. Only continue if "
-        f"you started this.</p>"
-        f'<form method="post"><input type="hidden" name="id" value="{e(pending_id)}">'
-        f'<label>Trilium password <input type="password" name="password" '
-        f"autofocus required></label><button>Authorize</button></form>"
-    )
-    err = f'<p style="color:#b00">{e(error)}</p>' if error else ""
+def _page(inner: str, status: int = 200) -> HTMLResponse:
+    """Minimal standalone HTML page for the login flow."""
     body = (
         '<!doctype html><html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         "<title>Trilium MCP login</title><style>body{font-family:system-ui,"
-        "sans-serif;max-width:28rem;margin:4rem auto;padding:0 1rem}input,button"
-        "{font:inherit;padding:.4rem;margin:.3rem 0;width:100%;box-sizing:"
-        f"border-box}}</style></head><body><h1>Trilium MCP</h1>{err}{form}"
+        "sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;line-height:1.5}"
+        "input,button{font:inherit;padding:.4rem;margin:.3rem 0;width:100%;"
+        f"box-sizing:border-box}}</style></head><body><h1>Trilium MCP</h1>{inner}"
         "</body></html>"
     )
     # DENY framing so the password form can't be clickjacked.
     return HTMLResponse(body, status_code=status, headers={"X-Frame-Options": "DENY"})
+
+
+def _login_page(pending_id, client_name, redirect_host, error="", status=200):
+    """The one page a human sees: who is asking, where the code goes, password."""
+    e = html.escape
+    err = f'<p style="color:#b00">{e(error)}</p>' if error else ""
+    return _page(
+        f"{err}<p><b>{e(client_name)}</b> wants access to your Trilium notes. After "
+        f"login you will be sent to <b>{e(redirect_host)}</b>. Only continue if "
+        f"you started this.</p>"
+        f'<form method="post"><input type="hidden" name="id" value="{e(pending_id)}">'
+        f'<label>Trilium password <input type="password" name="password" '
+        f"autofocus required></label><button>Authorize</button></form>",
+        status,
+    )
+
+
+def _dead_end_page(heading: str, what: str, status: int) -> HTMLResponse:
+    """A login that can't continue from here. The usual cause is the MCP app
+    interrupting its own OAuth flow -- claude.ai asking the user to log in to
+    claude.ai partway through, then dropping the finished login -- so say that,
+    say it isn't the server's fault, and give the fix."""
+    return _page(
+        f"<h2>{html.escape(heading)}</h2><p>{html.escape(what)}</p>"
+        "<p><b>Why:</b> your app interrupted its own login. Most often it asked "
+        "you to log in to the app itself (for example claude.ai) partway through, "
+        "then lost track of this login. Nothing is wrong with your Trilium or "
+        "this MCP server.</p>"
+        "<p><b>Fix:</b> go back to your app and remove this connector and add it "
+        "again, or use its Reconnect / Authenticate button. Being logged in to "
+        "the app first avoids the interruption.</p>",
+        status,
+    )
 
 
 class TriliumOAuthProvider(OAuthProvider):
@@ -349,17 +372,21 @@ class TriliumOAuthProvider(OAuthProvider):
             await self.store.get(pending_id, collection="pending") if pending_id else None
         )
         if not pending:
-            return _login_page(
-                error="This login link has expired. Start the connection again "
-                "from your MCP client.",
-                status=400,
+            return _dead_end_page(
+                "Login link expired or already used",
+                "Login links work once, for 10 minutes.",
+                400,
             )
         if pending.get("done"):
             # A browser re-submitted a login that already succeeded (seen with
             # claude.ai's connector flow). Mint nothing; say what happened.
-            return _login_page(
-                error="This login already went through. If your app did not "
-                "connect, start again from the app."
+            return _dead_end_page(
+                "Login already completed",
+                "Your password was accepted and this login finished a moment "
+                "ago; the browser sent the form a second time. If your app "
+                "now shows the connector without tools, it dropped that "
+                "finished login.",
+                200,
             )
         params = AuthorizationParams.model_validate(pending["params"])
         client = await self.get_client(pending["client_id"])

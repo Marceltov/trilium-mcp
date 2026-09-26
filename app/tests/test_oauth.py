@@ -213,6 +213,16 @@ def test_expired_login_link_is_rejected():
 
     r = TestClient(Starlette(routes=app)).get("/login", params={"id": "nope"})
     assert r.status_code == 400
+    assert_explains_reconnect(r.text)
+
+
+def assert_explains_reconnect(page: str):
+    """Dead-end login pages must say why it happened (the app interrupted its own
+    flow, e.g. a claude.ai login), that it isn't the server's fault, and the fix."""
+    assert "claude.ai" in page
+    assert "Nothing is wrong with your Trilium or this MCP server" in page
+    assert "remove this connector and add it again" in page
+    assert "Reconnect" in page
 
 
 import pytest
@@ -340,4 +350,5 @@ def test_replayed_login_says_completed_and_mints_nothing():
     replay = http.post("/login", data={"id": pending, "password": "pw"})
     assert replay.status_code == 200
     assert "already" in replay.text and "expired" not in replay.text
+    assert_explains_reconnect(replay.text)
     assert len([c for c in calls if c.url.path.endswith("/auth/login")]) == 1
