@@ -167,6 +167,17 @@ stripped before the request is forwarded), so `Authorization: Bearer YOUR_TOKEN`
 
 Alternatively, use the provided [`.mcp.json`](.mcp.json), filling in your host and token.
 
+### ChatGPT on Android (Custom GPT Action)
+
+ChatGPT connects to this server over MCP (Developer mode) only on the web and desktop. The Android app doesn't support MCP yet, but it can use a Custom GPT's **Actions**, which are plain REST calls. With `CHATGPT_ACTIONS=true` (and `MCP_BASE_URL` set to the public HTTPS URL), the server also serves:
+
+- `GET /chatgpt/openapi.json`: the ETAPI spec trimmed to the 30 operations a GPT Action allows (no login/logout, ZIP import/export or attachments), pointed at the proxy below. It's public, like the ETAPI spec itself.
+- `/chatgpt/etapi/...`: a REST proxy to Trilium that forwards only those 30 operations, with the same token handling as MCP calls. Trilium itself can stay private.
+
+To set it up on chatgpt.com: **Explore GPTs → Create → Configure → Create new action → Import from URL** with `https://your-host/chatgpt/openapi.json`. For **Authentication** choose **API Key**, auth type **Bearer**, and paste an ETAPI token (raw ETAPI tokens need `token` or `both` mode). Save the GPT as "Only me"; it then shows up in the Android app.
+
+Note: OpenAI is retiring custom GPTs (from Dec 11, 2026 for Enterprise workspaces, other plans may follow), so treat this as a stopgap until ChatGPT's mobile apps support MCP.
+
 ## Configuration
 
 All configuration is via environment variables:
@@ -182,6 +193,7 @@ All configuration is via environment variables:
 | `MCP_AUTH_MODE`      | `both` if the two OAuth variables are set, else `token` | `token` (raw ETAPI token in `Authorization`), `oauth` (OAuth 2.1 only) or `both`. |
 | `MCP_BASE_URL`       | *(unset)*             | Public URL clients reach this server at, e.g. `https://trilium-mcp.example.com`. The OAuth issuer: must be HTTPS (plain `http` only for `localhost`). Required for `oauth`/`both`. |
 | `MCP_OAUTH_SECRET`   | *(unset)*             | Encrypts the OAuth store at `/data/oauth` (mount a volume at `/data`). Required for `oauth`/`both`; changing it logs every OAuth client out. |
+| `CHATGPT_ACTIONS`    | *(unset = off)*       | `true` serves a ChatGPT Custom GPT Action (spec + REST proxy), see [ChatGPT on Android](#chatgpt-on-android-custom-gpt-action). Requires `MCP_BASE_URL`. |
 
 ### OAuth details
 

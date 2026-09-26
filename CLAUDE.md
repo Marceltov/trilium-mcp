@@ -108,6 +108,10 @@ validates the token itself.
 
 `MCP_AUTH_MODE` (`token|oauth|both`) picks the gate; see `resolve_auth_mode` (unset → `both` if `MCP_BASE_URL` + `MCP_OAUTH_SECRET` are set, else `token`) and `wrap_app`. In `oauth`/`both`, `TriliumOAuthProvider` (a FastMCP `OAuthProvider`) replaces `TokenCaptureMiddleware`: its `/login` page trades the Trilium password for an ETAPI token via ETAPI `/auth/login`, issues `tmcp_`-prefixed opaque tokens mapped to it in a Fernet-encrypted `FileTreeStore` at `/data/oauth`, and `verify_token` puts the ETAPI token in the access token's `etapi_token` claim, which `EtapiTokenAuth` reads via `get_access_token()`. In `both`, `BearerPrefixMiddleware` adds `Bearer ` to raw headers (FastMCP only parses Bearer), and a non-`tmcp_` bearer that isn't ours is forwarded as a raw ETAPI token. `MCP_BASE_URL` must be HTTPS or localhost (the SDK's issuer rule), checked in `build_oauth_provider`.
 
+### ChatGPT Action
+
+ChatGPT's Android app can't use MCP, so `CHATGPT_ACTIONS=true` makes `register_chatgpt_routes` serve a Custom GPT Action: `chatgpt_spec` trims the ETAPI spec to 30 operations (`CHATGPT_DROP`; GPT Actions cap at 30) at `/chatgpt/openapi.json`, and `/chatgpt/etapi/*` proxies only those operations through the same `EtapiTokenAuth` client. FastMCP's auth middleware is app-wide, so custom routes get the token in every auth mode; `TokenCaptureMiddleware` exempts only the public spec path. `putNoteContentById` is JSON `{content}` in the served spec and converted back to text/plain by the proxy.
+
 ### Startup resilience
 
 If the OpenAPI spec can't be loaded or the auth configuration is invalid, `main()` falls back to `build_error_server()`, which
@@ -118,7 +122,7 @@ instead of dying with an opaque connection error.
 
 All config is environment variables (no CLI args), so the server runs cleanly as a sidecar:
 `TRILIUM_SERVER_URL` (`/etapi` is appended automatically), `MCP_HOST`, `MCP_PORT`, `MCP_PATH`,
-`TRILIUM_ETAPI_SPEC`, `MCP_ALLOWED_HOSTS`, `MCP_AUTH_MODE`, `MCP_BASE_URL`, `MCP_OAUTH_SECRET`. Host protection (DNS-rebinding) is **off by
+`TRILIUM_ETAPI_SPEC`, `MCP_ALLOWED_HOSTS`, `MCP_AUTH_MODE`, `MCP_BASE_URL`, `MCP_OAUTH_SECRET`, `CHATGPT_ACTIONS`. Host protection (DNS-rebinding) is **off by
 default** (any Host accepted; the token is the real gate) and only restricts when
 `MCP_ALLOWED_HOSTS` is set.
 

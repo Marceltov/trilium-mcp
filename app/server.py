@@ -15,9 +15,12 @@
 # You should have received a copy of the GNU Affero General Public License along
 # with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import copy
 import html
 import io
+import json
 import os
+import re
 import secrets
 import sys
 import time
@@ -53,7 +56,13 @@ from mcp.server.auth.routes import validate_issuer_url
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyHttpUrl
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from starlette.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from starlette.routing import Route
 
 # The ETAPI OpenAPI spec ships alongside this server (baked into the image).
@@ -71,6 +80,7 @@ MCP_ALLOWED_HOSTS_ENV = "MCP_ALLOWED_HOSTS"  # comma-separated Host allowlist (s
 AUTH_MODE_ENV = "MCP_AUTH_MODE"            # token | oauth | both (see resolve_auth_mode)
 BASE_URL_ENV = "MCP_BASE_URL"              # public URL clients reach us at (OAuth issuer)
 OAUTH_SECRET_ENV = "MCP_OAUTH_SECRET"      # encrypts the OAuth store at rest
+CHATGPT_ENV = "CHATGPT_ACTIONS"            # true -> serve a Custom GPT Action (see register_chatgpt_routes)
 
 DEFAULT_SERVER_URL = "http://trilium:8080"
 DEFAULT_HOST = "0.0.0.0"
@@ -79,6 +89,19 @@ DEFAULT_PATH = "/mcp"
 HEALTH_PATH = "/health"
 AUTH_MODES = ("token", "oauth", "both")
 OAUTH_STORE_DIR = Path("/data/oauth")      # mount a volume at /data to keep logins
+
+# ChatGPT Custom GPT Action (see register_chatgpt_routes). A GPT Action takes at
+# most 30 operations and 300-character descriptions; the full spec minus
+# CHATGPT_DROP is exactly 30.
+CHATGPT_SPEC_PATH = "/chatgpt/openapi.json"
+CHATGPT_PROXY_PREFIX = "/chatgpt/etapi"
+CHATGPT_DROP = {
+    "login", "logout", "exportNoteSubtree", "importZip",
+    "postAttachment", "getAttachmentById", "patchAttachmentById",
+    "deleteAttachmentById", "getAttachmentContent", "putAttachmentContentById",
+}
+CHATGPT_MAX_DESCRIPTION = 300
+CHATGPT_NOTE_CONTENT = "/notes/{noteId}/content"
 
 # exportNoteSubtree returns a binary ZIP, which FastMCP's OpenAPI machinery
 # tries to JSON-decode (crashing on the first non-UTF-8 byte). We exclude the
@@ -130,8 +153,9 @@ class TokenCaptureMiddleware:
 
     The token IS the auth: a request without one is rejected with 401 before it
     reaches FastMCP; validity is enforced by Trilium on the actual ETAPI call.
+    The health check and the (public) ChatGPT Action spec are always allowed.
     Implemented at the ASGI layer (not BaseHTTPMiddleware) so it does not buffer
-    the streamable-HTTP response. The health check is always allowed.
+    the streamable-HTTP response.
     """
 
     def __init__(self, app) -> None:
@@ -142,7 +166,7 @@ class TokenCaptureMiddleware:
             # Forward lifespan / websocket scopes untouched.
             await self.app(scope, receive, send)
             return
-        if scope.get("path") == HEALTH_PATH:
+        if scope.get("path") in (HEALTH_PATH, CHATGPT_SPEC_PATH):
             await self.app(scope, receive, send)
             return
         headers = dict(scope.get("headers") or [])
@@ -611,6 +635,100 @@ def register_content_put_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
         return f"Updated content of attachment {attachmentId!r}."
 
 
+def chatgpt_spec(spec: dict, base_url: str) -> dict:
+    """The ETAPI spec trimmed to what a ChatGPT Custom GPT Action accepts,
+    pointed at this server's proxy (see register_chatgpt_routes).
+
+    putNoteContentById's text/plain body becomes JSON `{"content": ...}`: GPT
+    Actions send JSON bodies, and the proxy turns it back into text/plain.
+    """
+    out = copy.deepcopy(spec)
+    out["servers"] = [{"url": base_url + CHATGPT_PROXY_PREFIX}]
+    out["security"] = [{"EtapiTokenAuth": []}]
+    for path, item in list(out["paths"].items()):
+        for method, op in list(item.items()):
+            if not isinstance(op, dict) or "operationId" not in op:
+                continue
+            if op["operationId"] in CHATGPT_DROP:
+                del item[method]
+            elif "description" in op:
+                op["description"] = op["description"][:CHATGPT_MAX_DESCRIPTION]
+        if not any(isinstance(op, dict) and "operationId" in op for op in item.values()):
+            del out["paths"][path]
+    out["paths"][CHATGPT_NOTE_CONTENT]["put"]["requestBody"] = {
+        "required": True,
+        "content": {"application/json": {"schema": {
+            "type": "object",
+            "required": ["content"],
+            "properties": {"content": {
+                "type": "string", "description": "New note content (HTML for text notes).",
+            }},
+        }}},
+    }
+    return out
+
+
+def register_chatgpt_routes(
+    mcp: FastMCP, client: httpx.AsyncClient, spec: dict, base_url: str
+) -> None:
+    """Serve a ChatGPT Custom GPT Action: the trimmed spec at CHATGPT_SPEC_PATH
+    and a REST proxy to ETAPI under CHATGPT_PROXY_PREFIX.
+
+    ChatGPT's Android app can't use MCP servers yet, but it can use a Custom
+    GPT's Actions (plain REST + OpenAPI). The proxy forwards only the spec's
+    operations -- notably not ETAPI's unauthenticated /auth/login -- through
+    `client`, so the token is handled exactly as for MCP tool calls
+    (TokenCaptureMiddleware / OAuth -> EtapiTokenAuth).
+    """
+    action_spec = chatgpt_spec(spec, base_url)
+    # Dates in the YAML examples parse as date objects; JSON needs strings.
+    spec_json = json.dumps(action_spec, default=str)
+    allowed = [
+        (method.upper(), re.compile(re.sub(r"\{[^}]+\}", "[^/]+", path)))
+        for path, item in action_spec["paths"].items()
+        for method, op in item.items()
+        if isinstance(op, dict) and "operationId" in op
+    ]
+    note_content = re.compile(re.sub(r"\{[^}]+\}", "[^/]+", CHATGPT_NOTE_CONTENT))
+
+    @mcp.custom_route(CHATGPT_SPEC_PATH, methods=["GET"])
+    async def chatgpt_openapi(_request: Request):
+        return Response(spec_json, media_type="application/json")
+
+    @mcp.custom_route(
+        CHATGPT_PROXY_PREFIX + "/{path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    )
+    async def chatgpt_proxy(request: Request):
+        path = "/" + request.path_params["path"]
+        if not any(m == request.method and r.fullmatch(path) for m, r in allowed):
+            return JSONResponse({"error": "not available to ChatGPT"}, status_code=404)
+        body = await request.body()
+        headers = {"Content-Type": request.headers.get("content-type", "application/json")}
+        if request.method == "PUT" and note_content.fullmatch(path):
+            try:
+                body = json.loads(body)["content"].encode("utf-8")
+            except (ValueError, KeyError, TypeError, AttributeError):
+                return JSONResponse(
+                    {"error": 'body must be JSON {"content": "<text>"}'}, status_code=400
+                )
+            headers = {"Content-Type": "text/plain; charset=utf-8"}
+        try:
+            response = await client.request(
+                request.method, path,
+                params=list(request.query_params.multi_items()),
+                content=body or None,
+                headers=headers if body else None,
+            )
+        except RuntimeError:  # EtapiTokenAuth found no usable token
+            return JSONResponse({"error": "missing or invalid Authorization"}, status_code=401)
+        return Response(
+            response.content,
+            status_code=response.status_code,
+            media_type=response.headers.get("content-type"),
+        )
+
+
 def etapi_url() -> str:
     """TRILIUM_SERVER_URL with `/etapi` appended (see the spec's `servers`)."""
     server_url = os.environ.get(SERVER_ENV, DEFAULT_SERVER_URL).rstrip("/")
@@ -752,6 +870,11 @@ def build_server(
     register_export_tool(mcp, client)
     register_content_put_tools(mcp, client)
     register_health(mcp)
+    if os.environ.get(CHATGPT_ENV, "").strip().lower() in ("1", "true", "yes"):
+        base_url = os.environ.get(BASE_URL_ENV, "").strip().rstrip("/")
+        if not base_url:
+            raise RuntimeError(f"{CHATGPT_ENV} requires {BASE_URL_ENV} (the public URL).")
+        register_chatgpt_routes(mcp, client, spec, base_url)
     return mcp
 
 
