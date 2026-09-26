@@ -27,6 +27,7 @@ import httpx
 import uvicorn
 import yaml
 from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.providers.openapi import MCPType, OpenAPITool, RouteMap
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
@@ -64,15 +65,18 @@ _incoming_auth: ContextVar[str | None] = ContextVar("incoming_auth", default=Non
 
 
 class EtapiTokenAuth(httpx.Auth):
-    """Forward the client-supplied ETAPI token to Trilium.
+    """Forward the client's ETAPI token to Trilium.
 
-    The token arrives per-request in the `_incoming_auth` contextvar (set by
+    With OAuth (see TriliumOAuthProvider), FastMCP's request-scoped access token
+    carries the ETAPI token in `claims["etapi_token"]`. Otherwise the token is
+    the raw client header in the `_incoming_auth` contextvar (set by
     TokenCaptureMiddleware). Trilium's ETAPI expects the raw token as the
     Authorization value, so we strip a leading 'Bearer ' if the client sent one.
     """
 
     def auth_flow(self, request: httpx.Request):
-        raw = _incoming_auth.get()
+        access = get_access_token()
+        raw = access.claims.get("etapi_token") if access else _incoming_auth.get()
         if raw and raw[:7].lower() == "bearer ":
             raw = raw[7:].strip()
         if not raw:

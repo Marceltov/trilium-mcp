@@ -58,3 +58,14 @@ def test_bearer_with_only_whitespace_raises():
                 httpx.Request("GET", "http://trilium:8080/etapi/app-info")))
     finally:
         server._incoming_auth.reset(reset)
+
+
+def test_oauth_access_token_claim_wins(monkeypatch):
+    from fastmcp.server.auth import AccessToken
+
+    token = AccessToken(
+        token="tmcp_x", client_id="c1", scopes=[], claims={"etapi_token": "minted"}
+    )
+    monkeypatch.setattr(server, "get_access_token", lambda: token)
+    out = _run_auth("Bearer tmcp_x")
+    assert out.headers["Authorization"] == "minted"
