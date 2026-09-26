@@ -30,7 +30,7 @@ cd app && uv run pytest -k test_strips_bearer_prefix   # single test
 
 # Dev stack: throwaway Trilium (seeded with demo notes) + MCP built from local source.
 docker compose up -d --build     # rebuild after any change under app/
-curl http://localhost:8081/health   # -> ok
+curl http://localhost:9091/health   # -> ok
 
 # Reset the seeded fixture to the committed state (containers MUST be down first,
 # or SQLite corrupts).
@@ -122,7 +122,7 @@ default** (any Host accepted; the token is the real gate) and only restricts whe
 
 ## Dev fixture credentials
 
-The seeded Trilium at http://localhost:8080 uses password `trilium-mcp`; the ETAPI token
+The seeded Trilium at http://localhost:9090 uses password `trilium-mcp`; the ETAPI token
 is in `etapi.token`. Both are **committed dev fixtures** scoped to the disposable instance —
 never reuse them anywhere real. The seeded DB lives in `trilium-data/` (only Trilium's
 default demo notes).

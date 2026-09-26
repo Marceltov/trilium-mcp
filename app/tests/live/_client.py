@@ -11,7 +11,7 @@ from fastmcp.client.transports import StreamableHttpTransport
 
 # app/tests/live/_client.py -> parents: [live, tests, app, <repo root>]
 REPO_ROOT = Path(__file__).resolve().parents[3]
-MCP_URL = os.environ.get("TRILIUM_MCP_URL", "http://localhost:8081/mcp")
+MCP_URL = os.environ.get("TRILIUM_MCP_URL", "http://localhost:9091/mcp")
 HEALTH_URL = str(httpx.URL(MCP_URL).copy_with(path="/health", query=None))
 
 

@@ -27,7 +27,7 @@ reset_db() {
 }
 
 wait_for_health() {
-  local url="http://localhost:8081/health"
+  local url="http://localhost:9091/health"
   echo "Waiting for MCP health at $url ..."
   for _ in $(seq 1 60); do
     if [ "$(curl -fs "$url" 2>/dev/null || true)" = "ok" ]; then
