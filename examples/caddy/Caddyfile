@@ -1,0 +1,9 @@
+# Caddy fetches and renews TLS certificates for both domains automatically.
+
+{$TRILIUM_DOMAIN} {
+	reverse_proxy trilium:8080
+}
+
+{$MCP_DOMAIN} {
+	reverse_proxy trilium-mcp:8081
+}

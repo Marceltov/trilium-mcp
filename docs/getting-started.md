@@ -10,7 +10,7 @@ In Trilium, open *Options → ETAPI → Create new ETAPI token*. This token is t
 
 ## 2. Add trilium-mcp to your compose file
 
-Add one service to the `docker-compose.yaml` that runs your Trilium. It pulls the prebuilt image, so there's nothing to clone or build:
+Add one service to the `docker-compose.yaml` that runs your Trilium. It pulls the prebuilt image, so there's nothing to clone or build. Starting without Trilium, or want HTTPS set up too? Use one of the [complete compose examples](compose-examples.md) instead.
 
 ```yaml
 services:

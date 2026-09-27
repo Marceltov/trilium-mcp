@@ -6,7 +6,7 @@ name: Publish docs
 on:
   push:
     branches: [main]
-    paths: ["docs/**", mkdocs.yml, .github/workflows/pages.yml]
+    paths: ["docs/**", "examples/**", mkdocs.yml, .github/workflows/pages.yml]
   workflow_dispatch:
 
 permissions:
