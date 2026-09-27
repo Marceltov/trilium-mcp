@@ -10,42 +10,19 @@ In Trilium, open *Options → ETAPI → Create new ETAPI token*. This token is t
 
 ## 2. Add trilium-mcp to your compose file
 
-Add one service to the `docker-compose.yaml` that runs your Trilium. It pulls the prebuilt image, so there's nothing to clone or build. Trilium in its own compose project? Use the [standalone compose example](compose-examples.md) instead.
+Add the `trilium-mcp` service and the `mcp-oauth` volume to the `docker-compose.yaml` that runs your Trilium. It pulls the prebuilt image, so there's nothing to clone or build. Trilium in its own compose project? Use the [separate compose project](compose-examples.md#as-a-separate-compose-project) example instead.
 
 ```yaml
-services:
-  trilium:
-    # ... your existing Trilium service ...
-
-  trilium-mcp:
-    image: ghcr.io/marceltov/trilium-mcp:latest
-    container_name: trilium-mcp
-    restart: unless-stopped
-    env_file: trilium-mcp.env
-    volumes:
-      # Keeps OAuth logins when the container is recreated; unused with tokens only.
-      - mcp-oauth:/data
-    ports:
-      - "8081:8081"
-
-volumes:
-  mcp-oauth:
+--8<-- "examples/same-project/docker-compose.yaml"
 ```
 
-Next to it, create `trilium-mcp.env` with the settings:
+Next to it, copy the settings to `trilium-mcp.env`:
 
 ```ini
-# Service name of your existing Trilium on the same compose network.
-TRILIUM_SERVER_URL=http://trilium:8080
-
-# Optional: enable OAuth login (see "Choosing an auth method").
-# Public HTTPS address of this server, behind your reverse proxy.
-#MCP_BASE_URL=https://trilium-mcp.example.com
-# Encrypts stored logins. Generate once with: openssl rand -hex 32
-#MCP_OAUTH_SECRET=
+--8<-- "examples/same-project/trilium-mcp.env.example"
 ```
 
-To turn on OAuth later, uncomment the last two settings and recreate the container with `docker compose up -d trilium-mcp`. The file holds a secret once OAuth is on, so keep it private (`chmod 600 trilium-mcp.env`) and out of version control. All settings are listed under [Configuration](configuration.md).
+To turn on OAuth later, fill in `MCP_BASE_URL` and `MCP_OAUTH_SECRET` and recreate the container with `docker compose up -d trilium-mcp`. The file holds a secret once OAuth is on, so keep it private (`chmod 600 trilium-mcp.env`) and out of version control. All settings are listed under [Configuration](configuration.md).
 
 Then start it:
 
