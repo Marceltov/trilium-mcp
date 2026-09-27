@@ -1,6 +1,6 @@
 # Configuration
 
-All configuration is through environment variables, so the server runs cleanly as a sidecar. The [quick start](getting-started.md#2-add-trilium-mcp-to-your-compose-file) keeps them in a `trilium-mcp.env` file next to your compose file.
+All configuration is through environment variables, so the server runs cleanly as a sidecar. The [compose examples](compose-examples.md) keep them in an env file next to the compose file.
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
@@ -22,7 +22,7 @@ With `MCP_BASE_URL` and `MCP_OAUTH_SECRET` set, clients that support the MCP aut
 - The password goes to Trilium once and is never stored.
 - Revoking a client's OAuth token also deletes its ETAPI token in Trilium.
 - Raw ETAPI tokens in the `Authorization` header (with or without `Bearer `) keep working in the default `both` mode.
-- Mount a volume at `/data` (see the [quick start](getting-started.md#2-add-trilium-mcp-to-your-compose-file)) so logins survive the container being recreated, for example on an image update.
+- Mount a volume at `/data` (see the [compose examples](compose-examples.md)) so logins survive the container being recreated, for example on an image update.
 
 An invalid `MCP_AUTH_MODE`, or an explicit `oauth`/`both` without its variables, starts the server in the [`startup_error` state](security.md#startup-errors).
 
