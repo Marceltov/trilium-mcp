@@ -1,13 +1,12 @@
 name: Publish docs
 
-# Publish README.md as the GitHub Pages site. The README stays the single source;
-# only it and the images under docs/ are staged, so nothing else in the repo
-# (fixtures, etapi.token, plans) ends up on the public site.
+# Build the documentation site from docs/ with Material for MkDocs and publish it
+# to GitHub Pages. --strict fails the build on broken internal links.
 
 on:
   push:
     branches: [main]
-    paths: [README.md, "docs/*.png", "docs/*.svg", .github/workflows/pages.yml]
+    paths: ["docs/**", mkdocs.yml, .github/workflows/pages.yml]
   workflow_dispatch:
 
 permissions:
@@ -24,29 +23,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Stage site
-        env:
-          BLOB: ${{ github.server_url }}/${{ github.repository }}/blob/main/
-        run: |
-          mkdir -p site/docs
-          cp docs/*.png docs/*.svg site/docs/
-          # ponytail: repo-only links are rewritten by name; add new ones here.
-          # GitHub alerts have no Jekyll equivalent, so they become bold labels.
-          sed -E \
-            -e "s#(\]\(|href=\")(LICENSE|CONTRIBUTING\.md)#\1${BLOB}\2#g" \
-            -e 's#^> \[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]$#> **\1**#' \
-            README.md > site/index.md
-          cat > site/_config.yml <<'EOF'
-          title: trilium-mcp
-          description: MCP server for the Trilium ETAPI
-          theme: jekyll-theme-minimal
-          logo: docs/trilium.svg
-          EOF
-      - uses: actions/jekyll-build-pages@v1
-        with:
-          source: site
-          destination: _site
+      - uses: astral-sh/setup-uv@v6
+      # mkdocs<2: Material 9 isn't compatible with MkDocs 2.0.
+      - run: uvx --with mkdocs-material==9.7.7 --with 'mkdocs<2' mkdocs build --strict
       - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
 
   deploy:
     needs: build

@@ -1,0 +1,83 @@
+site_name: trilium-mcp
+site_description: An MCP server that turns the Trilium ETAPI into tools for Claude and other MCP clients.
+site_url: https://marceltov.github.io/trilium-mcp/
+repo_url: https://github.com/Marceltov/trilium-mcp
+repo_name: Marceltov/trilium-mcp
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2026 Marcel Bruckner. Licensed under <a href="https://github.com/Marceltov/trilium-mcp/blob/main/LICENSE">AGPL-3.0-or-later</a>
+
+# docs/ also holds the PlantUML sources and local-only planning notes.
+exclude_docs: |
+  *.puml
+  *.iuml
+  superpowers/
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Quick start: getting-started.md
+      - Connect a client: connecting.md
+      - ChatGPT on Android: chatgpt.md
+  - Deployment:
+      - Configuration: configuration.md
+      - Reverse proxy and TLS: reverse-proxy.md
+      - Security: security.md
+  - Internals:
+      - How it works: how-it-works.md
+      - Design decisions:
+          - OAuth login via the Trilium password: adr/0001-oauth-login-via-trilium-password.md
+          - ChatGPT Custom GPT Action proxy: adr/0002-chatgpt-custom-gpt-action-proxy.md
+  - Project:
+      - Alternatives: alternatives.md
+      - Contributing: contributing.md
+
+theme:
+  name: material
+  logo: trilium.svg
+  favicon: trilium.svg
+  font:
+    text: Atkinson Hyperlegible Next
+    code: Atkinson Hyperlegible Mono
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.instant
+    - navigation.footer
+    - navigation.top
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - content.action.edit
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true

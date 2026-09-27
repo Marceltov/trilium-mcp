@@ -1,0 +1,153 @@
+/* Palette from the Trilium flower logo (same as docs/theme.iuml):
+   green for links and the active page, orange for hover. The header stays
+   quiet — paper-white in light mode, a green-tinted charcoal in dark. */
+
+:root > * {
+  --tm-green: #2f7a27;
+  --tm-orange: #a9560f;
+  --tm-ink: #1e293b;
+  --tm-mist: #eef3ec;
+
+  --md-primary-fg-color: #ffffff;
+  --md-primary-fg-color--light: #ffffff;
+  --md-primary-fg-color--dark: #ffffff;
+  --md-primary-bg-color: var(--tm-ink);
+  --md-primary-bg-color--light: #475569;
+  --md-accent-fg-color: var(--tm-orange);
+  --md-typeset-a-color: var(--tm-green);
+  --md-typeset-color: var(--tm-ink);
+  --md-footer-bg-color: #16241a;
+  --md-footer-bg-color--dark: #101a13;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 130;
+  --tm-green: #7cc36a;
+  --tm-orange: #f0a35e;
+  --tm-ink: #e2e8e0;
+  --tm-mist: hsla(130, 15%, 18%, 1);
+
+  --md-primary-fg-color: hsla(130, 15%, 12%, 1);
+  --md-primary-fg-color--light: hsla(130, 15%, 12%, 1);
+  --md-primary-fg-color--dark: hsla(130, 15%, 12%, 1);
+  --md-primary-bg-color: var(--tm-ink);
+  --md-typeset-a-color: var(--tm-green);
+  --md-typeset-color: hsla(130, 10%, 88%, 1);
+}
+
+/* Header: a hairline instead of a coloured bar. */
+.md-header {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+  box-shadow: none;
+}
+.md-header[data-md-state="shadow"],
+.md-header--shadow {
+  box-shadow: 0 1px 0 var(--md-default-fg-color--lightest);
+}
+.md-search__input {
+  background-color: var(--tm-mist);
+  color: var(--tm-ink);
+}
+.md-search__input::placeholder,
+.md-search__icon {
+  color: var(--md-default-fg-color--light);
+}
+.md-search__input:hover {
+  background-color: var(--tm-mist);
+}
+
+/* The header already names the site; drop the repeat atop the sidebar. */
+@media screen and (min-width: 76.25em) {
+  .md-nav--primary > .md-nav__title {
+    display: none;
+  }
+}
+
+/* Reading rhythm: Atkinson reads best a touch larger and looser. */
+.md-typeset {
+  font-size: 0.82rem;
+  line-height: 1.65;
+}
+.md-typeset h1 {
+  color: var(--tm-ink);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+.md-typeset h2 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.md-typeset a:focus-visible,
+.md-nav__link:focus-visible {
+  outline: 2px solid var(--tm-orange);
+  outline-offset: 2px;
+}
+
+/* Diagrams are rendered on white; keep them legible on the dark scheme. */
+.md-typeset img[src$=".png"] {
+  display: block;
+  margin: 1.2em auto;
+  border-radius: 0.4rem;
+}
+[data-md-color-scheme="slate"] .md-typeset img[src$=".png"] {
+  background: #ffffff;
+  padding: 0.6rem;
+}
+
+/* Home page hero: the headline and the one command that connects a client. */
+.tm-hero {
+  padding: 1.5rem 0 0.5rem;
+}
+.md-typeset .tm-hero h1 {
+  font-size: 2.4rem;
+  line-height: 1.1;
+  margin: 0.4em 0 0.4em;
+  max-width: 13em;
+  text-wrap: balance;
+}
+.tm-hero__lead {
+  font-size: 1.05rem;
+  line-height: 1.55;
+  max-width: 34em;
+  color: var(--md-default-fg-color--light);
+}
+.md-typeset .tm-hero .md-button {
+  margin: 0.3rem 0.4rem 0.3rem 0;
+}
+.md-typeset .md-button {
+  color: var(--tm-green);
+  border-color: currentColor;
+}
+.md-typeset .md-button--primary {
+  background-color: var(--tm-green);
+  border-color: var(--tm-green);
+  color: #ffffff;
+}
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary {
+  color: #10200c;
+}
+.md-typeset .md-button--primary:hover,
+.md-typeset .md-button--primary:focus {
+  background-color: var(--tm-orange);
+  border-color: var(--tm-orange);
+}
+
+@media screen and (max-width: 44.9375em) {
+  .md-typeset .tm-hero h1 {
+    font-size: 1.8rem;
+  }
+}
+
+/* Collapsible "In detail" notes take the brand green instead of Material's blue. */
+.md-typeset .admonition.note,
+.md-typeset details.note {
+  border-color: var(--tm-green);
+}
+.md-typeset .note > .admonition-title,
+.md-typeset .note > summary {
+  background-color: color-mix(in srgb, var(--tm-green) 10%, transparent);
+}
+.md-typeset .note > .admonition-title::before,
+.md-typeset .note > summary::before {
+  background-color: var(--tm-green);
+}

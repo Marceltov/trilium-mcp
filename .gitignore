@@ -21,3 +21,6 @@ trilium-data/backup/
 
 # Superpowers design docs (brainstorming specs / implementation plans) — local only
 docs/superpowers/
+
+# MkDocs build output
+site/
