@@ -1,6 +1,6 @@
 # Quick start
 
-Three steps: create a token in Trilium, add one service to your compose file, and point your client at it. Connecting remote or app clients? You can skip the token and use [OAuth](connecting.md#oauth) instead.
+Three steps: create a token in Trilium, add one service to your compose file, and point your client at it. You need a running Trilium server; [don't have one yet?](compose-examples.md#dont-have-trilium-yet) Connecting remote or app clients? You can skip the token and use [OAuth](connecting.md#oauth) instead.
 
 ## 1. Create an ETAPI token
 
@@ -10,7 +10,7 @@ In Trilium, open *Options → ETAPI → Create new ETAPI token*. This token is t
 
 ## 2. Add trilium-mcp to your compose file
 
-Add one service to the `docker-compose.yaml` that runs your Trilium. It pulls the prebuilt image, so there's nothing to clone or build. Starting without Trilium, or want HTTPS set up too? Use one of the [complete compose examples](compose-examples.md) instead.
+Add one service to the `docker-compose.yaml` that runs your Trilium. It pulls the prebuilt image, so there's nothing to clone or build. Trilium in its own compose project? Use the [standalone compose example](compose-examples.md) instead.
 
 ```yaml
 services:

@@ -19,7 +19,7 @@ nav:
       - Connect a client: connecting.md
       - ChatGPT on Android: chatgpt.md
   - Deployment:
-      - Compose examples: compose-examples.md
+      - Compose example: compose-examples.md
       - Configuration: configuration.md
       - Reverse proxy and TLS: reverse-proxy.md
       - Security: security.md

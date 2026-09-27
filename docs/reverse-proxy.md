@@ -13,5 +13,3 @@ trilium-mcp.example.com {
 Then set `MCP_BASE_URL=https://trilium-mcp.example.com` if you use OAuth, and consider restricting accepted hosts with [`MCP_ALLOWED_HOSTS`](security.md#host-allowlist).
 
 Direct `http://<lan-ip>:8081` access without a proxy is fine on a network you trust, with an ETAPI token.
-
-For a complete stack with Caddy, Trilium and OAuth, see [Public HTTPS with OAuth](compose-examples.md#public-https-with-oauth).
