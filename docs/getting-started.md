@@ -39,9 +39,9 @@ Then start it:
 docker compose up -d trilium-mcp
 ```
 
-Both services share the compose network, so `trilium` resolves to your existing container. If your Trilium runs elsewhere (a separate compose project or host), point `TRILIUM_SERVER_URL` at a URL this container can reach and attach it to the right network; see [Configuration](configuration.md). The MCP endpoint is then available at `http://localhost:8081/mcp`.
+Both services share the compose network, so `trilium` resolves to your existing container. If your Trilium runs elsewhere (a separate compose project or host), point `TRILIUM_SERVER_URL` at a URL this container can reach and attach it to the right network; see [Configuration](configuration.md). The MCP endpoint listens on port 8081 at `/mcp`. To use it from other machines, put it behind a [reverse proxy](reverse-proxy.md) for an HTTPS address like `https://trilium-mcp.example.com/mcp`, or use `http://<server-ip>:8081/mcp` on a trusted local network.
 
-Check that it's up:
+Check that it's up, on the Docker host:
 
 ```bash
 curl http://localhost:8081/health   # -> ok
@@ -49,11 +49,11 @@ curl http://localhost:8081/health   # -> ok
 
 ## 3. Connect your MCP client
 
-Register the server with the token from step 1:
+On the machine running your client, register the server's address with the token from step 1:
 
 ```bash
 claude mcp add trilium --scope user --transport http \
-  http://localhost:8081/mcp \
+  https://trilium-mcp.example.com/mcp \
   --header "Authorization: YOUR_TRILIUM_ETAPI_TOKEN"
 ```
 

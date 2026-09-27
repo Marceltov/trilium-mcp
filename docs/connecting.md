@@ -36,7 +36,7 @@ The ETAPI token is the credential: pass it in the `Authorization` header. Point 
 
     ```bash
     claude mcp add trilium --scope user --transport http \
-      https://your-host/mcp \
+      https://trilium-mcp.example.com/mcp \
       --header "Authorization: YOUR_TRILIUM_ETAPI_TOKEN"
     ```
 
@@ -57,7 +57,7 @@ The ETAPI token is the credential: pass it in the `Authorization` header. Point 
       "mcpServers": {
         "trilium": {
           "type": "http",
-          "url": "https://your-host/mcp",
+          "url": "https://trilium-mcp.example.com/mcp",
           "headers": {
             "Authorization": "YOUR_TRILIUM_ETAPI_TOKEN"
           }
@@ -84,6 +84,6 @@ claude mcp add trilium-work --scope user --transport http \
 
 ```bash
 claude mcp add trilium --transport http \
-  http://localhost:8081/mcp \
+  https://trilium-mcp.example.com/mcp \
   --header "Authorization: YOUR_TRILIUM_ETAPI_TOKEN"
 ```
