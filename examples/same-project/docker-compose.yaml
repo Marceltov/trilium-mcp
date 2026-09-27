@@ -1,4 +1,4 @@
-# Add the trilium-mcp service (and the volume) to the compose file that runs Trilium.
+# Add trilium-mcp and its volume to the compose file that runs Trilium.
 # Copy trilium-mcp.env.example to trilium-mcp.env next to it, then:
 #   docker compose up -d trilium-mcp
 services:
