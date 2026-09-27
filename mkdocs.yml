@@ -6,10 +6,9 @@ repo_name: Marceltov/trilium-mcp
 edit_uri: edit/main/docs/
 copyright: Copyright &copy; 2026 Marcel Bruckner. Licensed under <a href="https://github.com/Marceltov/trilium-mcp/blob/main/LICENSE">AGPL-3.0-or-later</a>
 
-# docs/ also holds the PlantUML sources and local-only planning notes.
+# Diagram sources are embedded into pages; planning notes are local-only.
 exclude_docs: |
-  *.puml
-  *.iuml
+  diagrams/
   superpowers/
 
 nav:
@@ -28,6 +27,7 @@ nav:
       - Design decisions:
           - OAuth login via the Trilium password: adr/0001-oauth-login-via-trilium-password.md
           - ChatGPT Custom GPT Action proxy: adr/0002-chatgpt-custom-gpt-action-proxy.md
+          - Mermaid diagrams: adr/0003-mermaid-diagrams-in-the-docs-site.md
   - Project:
       - Alternatives: alternatives.md
       - Contributing: contributing.md
@@ -69,6 +69,10 @@ theme:
 extra_css:
   - stylesheets/extra.css
 
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.min.js
+  - javascripts/mermaid.js
+
 markdown_extensions:
   - admonition
   - attr_list
@@ -81,6 +85,10 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.snippets:
       check_paths: true
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true

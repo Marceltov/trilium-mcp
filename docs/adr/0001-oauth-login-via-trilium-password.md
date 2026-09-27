@@ -42,4 +42,4 @@ Chosen option: "the MCP server is its own authorization server", because it is t
 
 ## More Information
 
-Flow diagrams: `docs/overview-oauth.puml`, `docs/oauth-login.puml`, `docs/oauth-call.puml`, `docs/oauth-refresh-revoke.puml`. Implementation: `TriliumOAuthProvider`, `resolve_auth_mode` and `wrap_app` in `app/server.py`.
+Flow diagrams: the OAuth section of [How it works](../how-it-works.md#oauth). Implementation: `TriliumOAuthProvider`, `resolve_auth_mode` and `wrap_app` in `app/server.py`.

@@ -29,7 +29,9 @@ claude mcp add trilium --scope user --transport http \
 - **Two ways to sign in.** Log in once in the browser with your Trilium password (OAuth, for remote and app clients), or send an ETAPI token with each request (for scripts and the local network). See [Choosing an auth method](connecting.md#choosing-an-auth-method).
 - **Stores nothing in token mode.** Each client's token is forwarded to Trilium per request, so one sidecar serves many clients.
 
-![Architecture: MCP clients → trilium-mcp → Trilium, on the Docker network](architecture.png){ width="720" }
+```mermaid
+--8<-- "docs/diagrams/architecture.mmd"
+```
 
 !!! tip "Using Claude Code?"
 
