@@ -10,7 +10,7 @@ The token is sent in the `Authorization` header on every call. Over plain HTTP i
 
 ## Host allowlist
 
-By default the server accepts requests for **any** `Host` (FastMCP's DNS-rebinding protection is off), so it can be reached by LAN IP or by the domain your reverse proxy forwards. To lock this down, set `MCP_ALLOWED_HOSTS` to a comma-separated list of the `host[:port]` values you actually use, for example `192.168.1.50:8081,trilium.example.com`. `localhost` is always allowed; anything else gets a `421`.
+By default the server accepts requests for **any** `Host` (FastMCP's DNS-rebinding protection is off), so it can be reached by LAN IP or by the domain your reverse proxy forwards. To lock this down, set `MCP_ALLOWED_HOSTS` to a comma-separated list of the `host[:port]` values you actually use, for example `192.168.1.50:8081,trilium-mcp.example.com`. `localhost` is always allowed; anything else gets a `421`.
 
 ## OAuth secrets
 

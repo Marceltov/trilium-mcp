@@ -8,7 +8,7 @@ ChatGPT connects to this server over MCP (Developer mode) only on the web and de
 ## Set up the Custom GPT
 
 1. On chatgpt.com, open **Explore GPTs → Create → Configure → Create new action**.
-2. Choose **Import from URL** and enter `https://your-host/chatgpt/openapi.json`.
+2. Choose **Import from URL** and enter `https://trilium-mcp.example.com/chatgpt/openapi.json`.
 3. Under **Authentication**, choose **API Key** with auth type **Bearer**, and paste an ETAPI token. Raw ETAPI tokens need the `token` or `both` [auth mode](configuration.md).
 4. Save the GPT as **Only me**. It then shows up in the Android app.
 

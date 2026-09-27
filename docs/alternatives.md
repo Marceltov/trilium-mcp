@@ -1,6 +1,6 @@
 # Alternatives
 
-Other open-source Trilium/TriliumNext MCP servers exist. Most are stdio subprocesses that connect a single local client to one Trilium using a token baked into the environment or a config file.
+Trilium ships its own MCP server, but it only answers on `localhost`, so the client has to run on the same machine as Trilium. Other open-source Trilium/TriliumNext MCP servers exist too. Most are stdio subprocesses that connect a single local client to one Trilium using a token baked into the environment or a config file.
 
 trilium-mcp is instead **HTTP-native** and forwards each client's token **per request**, so a single sidecar can serve many clients, each presenting its own token, while storing no secret of its own. Like the others, one sidecar fronts one Trilium, set via `TRILIUM_SERVER_URL`; run one per instance. Its tools are also **generated from the ETAPI OpenAPI spec** (full endpoint coverage) rather than hand-written.
 

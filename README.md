@@ -60,7 +60,7 @@ Then create an ETAPI token in Trilium (*Options → ETAPI*) and connect your cli
 ```bash
 docker compose up -d trilium-mcp
 claude mcp add trilium --scope user --transport http \
-  http://localhost:8081/mcp \
+  https://trilium-mcp.example.com/mcp \
   --header "Authorization: YOUR_TRILIUM_ETAPI_TOKEN"
 ```
 
