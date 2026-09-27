@@ -68,22 +68,26 @@ The ETAPI token is the credential: pass it in the `Authorization` header. Point 
 
 The raw token is what Trilium's ETAPI expects. A `Bearer ` prefix is also accepted and stripped before the request is forwarded, so `Authorization: Bearer YOUR_TOKEN` works too.
 
-### Multiple Trilium instances
+## Multiple Trilium instances
 
-Each deployment uses the same image and is bound to one Trilium via `TRILIUM_SERVER_URL`. Register each one under its own name, with its own URL and token:
+Run one trilium-mcp container per Trilium (each bound to its instance via `TRILIUM_SERVER_URL`), then add one connection per container under its own name. Each connection picks its own auth method, so you can mix them:
 
 ```bash
+# OAuth: log in with /mcp on first use
+claude mcp add trilium-home --scope user --transport http \
+  https://trilium-home.example.com/mcp
+
+# ETAPI token
 claude mcp add trilium-work --scope user --transport http \
-  https://work-host/mcp \
+  https://trilium-work.example.com/mcp \
   --header "Authorization: WORK_TOKEN"
 ```
 
-### User or project scope
+## User or project scope
 
-`--scope user` registers the server across all your projects, which is usually what you want for a personal knowledge base. Drop it to fall back to the default local scope, available only to you in the current project:
+`--scope user` registers the server across all your projects, which is usually what you want for a personal knowledge base. Drop it to fall back to the default local scope, available only to you in the current project. This works the same with either auth method:
 
 ```bash
 claude mcp add trilium --transport http \
-  https://trilium-mcp.example.com/mcp \
-  --header "Authorization: YOUR_TRILIUM_ETAPI_TOKEN"
+  https://trilium-mcp.example.com/mcp
 ```
