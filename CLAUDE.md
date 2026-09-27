@@ -136,7 +136,4 @@ default demo notes).
 
 ## Diagrams
 
-`docs/*.puml` render to PNGs via the `.githooks/pre-commit` hook (enable once with
-`git config core.hooksPath .githooks`; requires `plantuml`). The hook re-renders and stages
-any PNG that's missing or older than its `.puml`/`theme.iuml`, so a commit touching a diagram
-always carries a matching PNG.
+Diagrams are Mermaid, written inline in the docs pages (`docs/how-it-works.md`; the architecture flowchart lives in `docs/diagrams/architecture.mmd` and is embedded in two pages via snippets). Material renders them client-side in the site theme, light and dark. `docs/javascripts/mermaid.js` wraps Material's Mermaid setup to fix lifeline, box and step-number colors and compact the sequence layout; the colors themselves are the `--md-mermaid-*` variables in `docs/stylesheets/extra.css`. Check a diagram change with a local `mkdocs serve` in both themes.

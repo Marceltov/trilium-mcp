@@ -1,0 +1,20 @@
+flowchart LR
+  app["App client<br>OAuth login"]
+  headless["Headless client<br>ETAPI token"]
+  lan["Client on a trusted LAN<br>ETAPI token"]
+  proxy["Reverse proxy<br>TLS"]
+  subgraph host["Docker host"]
+    mcp["trilium-mcp<br>:8081 /mcp"]
+    oauth[("mcp-oauth<br>encrypted")]
+    trilium["Trilium<br>:8080 /etapi"]
+    data[("trilium-data")]
+  end
+  app -- HTTPS --> proxy
+  headless -- HTTPS --> proxy
+  lan -- HTTP --> mcp
+  proxy --> mcp
+  mcp -- OAuth logins --> oauth
+  mcp -- ETAPI --> trilium
+  trilium --> data
+  classDef accent fill:#98D486,stroke:#2f7a27,color:#10200c,stroke-width:1.5px
+  class mcp accent
