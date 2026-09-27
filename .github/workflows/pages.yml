@@ -1,0 +1,59 @@
+name: Publish docs
+
+# Publish README.md as the GitHub Pages site. The README stays the single source;
+# only it and the images under docs/ are staged, so nothing else in the repo
+# (fixtures, etapi.token, plans) ends up on the public site.
+
+on:
+  push:
+    branches: [main]
+    paths: [README.md, "docs/*.png", "docs/*.svg", .github/workflows/pages.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage site
+        env:
+          BLOB: ${{ github.server_url }}/${{ github.repository }}/blob/main/
+        run: |
+          mkdir -p site/docs
+          cp docs/*.png docs/*.svg site/docs/
+          # ponytail: repo-only links are rewritten by name; add new ones here.
+          # GitHub alerts have no Jekyll equivalent, so they become bold labels.
+          sed -E \
+            -e "s#(\]\(|href=\")(LICENSE|CONTRIBUTING\.md)#\1${BLOB}\2#g" \
+            -e 's#^> \[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]$#> **\1**#' \
+            README.md > site/index.md
+          cat > site/_config.yml <<'EOF'
+          title: trilium-mcp
+          description: MCP server for the Trilium ETAPI
+          theme: jekyll-theme-minimal
+          logo: docs/trilium.svg
+          EOF
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: site
+          destination: _site
+      - uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
