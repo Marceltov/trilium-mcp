@@ -21,17 +21,31 @@ services:
     image: ghcr.io/marceltov/trilium-mcp:latest
     container_name: trilium-mcp
     restart: unless-stopped
-    environment:
-      # Service name of your existing Trilium on the same compose network.
-      TRILIUM_SERVER_URL: http://trilium:8080
-      # Optional — enables OAuth login (see "Choosing an auth method"):
-      # MCP_BASE_URL: https://trilium-mcp.example.com
-      # MCP_OAUTH_SECRET: <long random string>
-    # volumes:
-    #   - mcp-oauth:/data   # keeps OAuth logins across restarts
+    env_file: trilium-mcp.env
+    volumes:
+      # Keeps OAuth logins when the container is recreated; unused with tokens only.
+      - mcp-oauth:/data
     ports:
       - "8081:8081"
+
+volumes:
+  mcp-oauth:
 ```
+
+Next to it, create `trilium-mcp.env` with the settings:
+
+```ini
+# Service name of your existing Trilium on the same compose network.
+TRILIUM_SERVER_URL=http://trilium:8080
+
+# Optional: enable OAuth login (see "Choosing an auth method").
+# Public HTTPS address of this server, behind your reverse proxy.
+#MCP_BASE_URL=https://trilium-mcp.example.com
+# Encrypts stored logins. Generate once with: openssl rand -hex 32
+#MCP_OAUTH_SECRET=
+```
+
+To turn on OAuth later, uncomment the last two settings and recreate the container with `docker compose up -d trilium-mcp`. The file holds a secret once OAuth is on, so keep it private (`chmod 600 trilium-mcp.env`) and out of version control. All settings are listed under [Configuration](configuration.md).
 
 Then start it:
 
