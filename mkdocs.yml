@@ -19,6 +19,7 @@ nav:
       - Connect a client: connecting.md
       - ChatGPT on Android: chatgpt.md
   - Deployment:
+      - Compose examples: compose-examples.md
       - Configuration: configuration.md
       - Reverse proxy and TLS: reverse-proxy.md
       - Security: security.md
@@ -78,6 +79,8 @@ markdown_extensions:
   - pymdownx.details
   - pymdownx.highlight
   - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      check_paths: true
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true

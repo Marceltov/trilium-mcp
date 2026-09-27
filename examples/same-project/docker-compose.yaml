@@ -1,0 +1,20 @@
+# Add trilium-mcp and its volume to the compose file that runs Trilium.
+# Copy trilium-mcp.env.example to trilium-mcp.env next to it, then:
+#   docker compose up -d trilium-mcp
+services:
+  trilium:
+    # ... your existing Trilium service ...
+
+  trilium-mcp:
+    image: ghcr.io/marceltov/trilium-mcp:latest
+    container_name: trilium-mcp
+    restart: unless-stopped
+    env_file: trilium-mcp.env
+    volumes:
+      # OAuth logins survive container updates (unused with tokens only).
+      - mcp-oauth:/data
+    ports:
+      - "8081:8081"
+
+volumes:
+  mcp-oauth:
