@@ -41,7 +41,7 @@ push produces a testable image tagged `:<branch>`, and a `v*` tag produces the v
 release (`:1.2.3`/`:1.2`/`:1`/`:latest`) plus a GitHub release. `latest` moves only on
 version tags. There are no `:sha` tags — pin an exact build by its immutable `@sha256`
 digest when needed. `cleanup-packages.yml` weekly prunes orphaned untagged manifests.
-`pages.yml` publishes `README.md` (plus `docs/` images) as the GitHub Pages site on pushes to `main`; it rewrites repo-only links (`LICENSE`, `CONTRIBUTING.md`) and GitHub alerts, so extend its `sed` when adding new ones.
+`pages.yml` builds the documentation site from `docs/*.md` (nav in `mkdocs.yml`, Material for MkDocs, `--strict`) and publishes it to GitHub Pages on pushes to `main`. Preview with `uvx --with mkdocs-material --with 'mkdocs<2' mkdocs serve`. User-facing docs live there; the README is only a short intro that links to the site, so document new config/features in `docs/`.
 
 ## Test layout
 
