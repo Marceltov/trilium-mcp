@@ -37,4 +37,4 @@ The connector gets its own ETAPI token, visible and deletable under *Options →
 
 ## More than one Trilium
 
-For more than one Trilium, add one connector per trilium-mcp container, each under its own name.
+Add one connector per trilium-mcp container, each under its own name. See [Multiple Trilium instances](multiple-instances.md).

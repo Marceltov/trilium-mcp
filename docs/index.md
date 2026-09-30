@@ -20,6 +20,8 @@ claude mcp add trilium --scope user --transport http \
   https://trilium-mcp.example.com/mcp
 ```
 
+Running more than one Trilium? Add one container and one named connection per instance, see [Multiple Trilium instances](multiple-instances.md).
+
 ## What it does
 
 - **Works from any device.** Trilium's built-in MCP server only answers on `localhost`, so your client has to run on the Trilium machine. trilium-mcp is served over HTTP, so Claude on your laptop, phone or the web can reach it through a reverse proxy.

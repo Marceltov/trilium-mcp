@@ -15,4 +15,6 @@ Both work side by side in the default `both` mode once OAuth is configured (`MCP
 - [Claude.ai](claude-ai.md): a custom connector on the web, which the desktop and mobile apps then use too. OAuth only.
 - [ChatGPT](chatgpt.md): an MCP connector in Developer mode on the web and desktop, or a Custom GPT Action for the Android app.
 
-For more than one Trilium, run one trilium-mcp container per instance and add each as its own named connection, for example [in Claude Code](claude-code.md#multiple-trilium-instances).
+!!! tip "More than one Trilium?"
+
+    Run one trilium-mcp container per instance and add each under its own name. See [Multiple Trilium instances](multiple-instances.md).
