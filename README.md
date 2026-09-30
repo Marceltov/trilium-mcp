@@ -5,8 +5,8 @@
 <h1 align="center"><a href="https://github.com/Marceltov/trilium-mcp">Trilium ETAPI MCP server</a></h1>
 
 <p align="center">
-  <a href="https://marceltov.github.io/trilium-mcp/">
-    <img alt="Documentation" src="https://img.shields.io/badge/docs-marceltov.github.io-2f7a27">
+  <a href="https://trilium-mcp.marceltov.de/">
+    <img alt="Documentation" src="https://img.shields.io/badge/docs-trilium--mcp.marceltov.de-2f7a27">
   </a>
   <a href="https://github.com/Marceltov/trilium-mcp/pkgs/container/trilium-mcp">
     <img alt="GHCR image" src="https://img.shields.io/github/v/release/Marceltov/trilium-mcp?logo=docker&logoColor=white&label=ghcr.io%2Fmarceltov%2Ftrilium-mcp&color=2496ED">
@@ -32,14 +32,14 @@ served over streamable **HTTP** so any MCP client connects to it by URL.
 
 ## Documentation
 
-**Full documentation: [marceltov.github.io/trilium-mcp](https://marceltov.github.io/trilium-mcp/)**
+**Full documentation: [trilium-mcp.marceltov.de](https://trilium-mcp.marceltov.de/)**
 
-- [Quick start](https://marceltov.github.io/trilium-mcp/getting-started/): create a token, add the container, connect a client
-- [Connect a client](https://marceltov.github.io/trilium-mcp/connecting/): OAuth or ETAPI token, multiple instances, `.mcp.json`
-- [ChatGPT on Android](https://marceltov.github.io/trilium-mcp/chatgpt/): the Custom GPT Action stopgap
-- [Configuration](https://marceltov.github.io/trilium-mcp/configuration/), [reverse proxy and TLS](https://marceltov.github.io/trilium-mcp/reverse-proxy/) and [security](https://marceltov.github.io/trilium-mcp/security/)
-- [How it works](https://marceltov.github.io/trilium-mcp/how-it-works/): architecture and request flows
-- [Alternatives](https://marceltov.github.io/trilium-mcp/alternatives/): other Trilium MCP servers compared
+- [Quick start](https://trilium-mcp.marceltov.de/getting-started/): create a token, add the container, connect a client
+- [Connect a client](https://trilium-mcp.marceltov.de/connecting/): OAuth or ETAPI token, multiple instances, `.mcp.json`
+- [ChatGPT on Android](https://trilium-mcp.marceltov.de/chatgpt/): the Custom GPT Action stopgap
+- [Configuration](https://trilium-mcp.marceltov.de/configuration/), [reverse proxy and TLS](https://trilium-mcp.marceltov.de/reverse-proxy/) and [security](https://trilium-mcp.marceltov.de/security/)
+- [How it works](https://trilium-mcp.marceltov.de/how-it-works/): architecture and request flows
+- [Alternatives](https://trilium-mcp.marceltov.de/alternatives/): other Trilium MCP servers compared
 
 ## Quick start
 
@@ -64,7 +64,7 @@ claude mcp add trilium --scope user --transport http \
   --header "Authorization: YOUR_TRILIUM_ETAPI_TOKEN"
 ```
 
-See the [quick start](https://marceltov.github.io/trilium-mcp/getting-started/) for OAuth login and running Trilium elsewhere.
+See the [quick start](https://trilium-mcp.marceltov.de/getting-started/) for OAuth login and running Trilium elsewhere.
 
 ## Contributing
 
