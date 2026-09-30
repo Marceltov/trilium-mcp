@@ -36,4 +36,4 @@ Running more than one Trilium? Add one container and one named connection per in
 
 !!! tip "Using Claude Code?"
 
-    Pair this server with [`trilium-plugin`](https://github.com/Marceltov/trilium-plugin), the client-side counterpart. It bundles the `.mcp.json` wiring plus ready-made skills (create, move, rename and search notes, manage attributes, work with templates and journal notes, export a subtree) that call these tools for you.
+    Pair this server with [`trilium-plugin`](https://trilium-plugin.marceltov.de/), the client-side counterpart. A skill registers your Trilium instances with Claude Code, and ready-made skills (create, move, rename and search notes, manage attributes, work with templates and journal notes, export a subtree) call these tools for you.
