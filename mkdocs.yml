@@ -20,10 +20,10 @@ nav:
       - Claude Code: claude-code.md
       - Claude.ai: claude-ai.md
       - ChatGPT: chatgpt.md
-      - Multiple instances: multiple-instances.md
   - Deployment:
       - Compose examples: compose-examples.md
       - Configuration: configuration.md
+      - Multiple instances: multiple-instances.md
       - Reverse proxy and TLS: reverse-proxy.md
       - Security: security.md
   - Internals:
