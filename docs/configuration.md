@@ -13,7 +13,7 @@ All configuration is through environment variables, so the server runs cleanly a
 | `MCP_AUTH_MODE` | *(unset = automatic)* | Usually leave unset: setting `MCP_BASE_URL` and `MCP_OAUTH_SECRET` turns on OAuth next to ETAPI tokens (`both`), otherwise the server accepts ETAPI tokens only (`token`). Set `oauth` to reject raw ETAPI tokens, so clients can only connect through a login you can revoke. See [Choosing a mode](#choosing-a-mode). |
 | `MCP_BASE_URL` | *(unset)* | Public URL clients reach this server at, e.g. `https://trilium-mcp.example.com`. The OAuth issuer: must be HTTPS (plain `http` only for `localhost`). Required for `oauth` and `both`. |
 | `MCP_OAUTH_SECRET` | *(unset)* | Encrypts the OAuth store at `/data/oauth` (mount a volume at `/data`). Required for `oauth` and `both`; changing it logs every OAuth client out. |
-| `CHATGPT_ACTIONS` | *(unset = off)* | `true` serves a ChatGPT Custom GPT Action (spec and REST proxy), see [ChatGPT on Android](chatgpt.md). Requires `MCP_BASE_URL`. |
+| `CHATGPT_ACTIONS` | *(unset = off)* | `true` serves a ChatGPT Custom GPT Action (spec and REST proxy), see [ChatGPT on Android](chatgpt.md#android). Requires `MCP_BASE_URL`. |
 
 ## OAuth details
 
