@@ -15,8 +15,11 @@ nav:
   - Home: index.md
   - Getting started:
       - Quick start: getting-started.md
-      - Connect a client: connecting.md
-      - ChatGPT on Android: chatgpt.md
+  - Connect a client:
+      - Overview: connecting.md
+      - Claude Code: claude-code.md
+      - Claude.ai: claude-ai.md
+      - ChatGPT: chatgpt.md
   - Deployment:
       - Compose examples: compose-examples.md
       - Configuration: configuration.md
