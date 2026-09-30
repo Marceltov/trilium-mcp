@@ -13,12 +13,11 @@ hide:
 
 </div>
 
-Once the container is reachable, connecting Claude Code from any machine takes one command:
+Once the container is reachable, connecting Claude Code from any machine takes one command, then `/mcp` to log in with your Trilium password:
 
 ```bash
 claude mcp add trilium --scope user --transport http \
-  https://trilium-mcp.example.com/mcp \
-  --header "Authorization: YOUR_TRILIUM_ETAPI_TOKEN"
+  https://trilium-mcp.example.com/mcp
 ```
 
 ## What it does
