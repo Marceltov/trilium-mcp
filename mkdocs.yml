@@ -1,6 +1,6 @@
 site_name: trilium-mcp
 site_description: An MCP server that turns the Trilium ETAPI into tools for Claude and other MCP clients.
-site_url: https://marceltov.github.io/trilium-mcp/
+site_url: https://trilium-mcp.marceltov.de/
 repo_url: https://github.com/Marceltov/trilium-mcp
 repo_name: Marceltov/trilium-mcp
 edit_uri: edit/main/docs/
@@ -20,6 +20,7 @@ nav:
       - Claude Code: claude-code.md
       - Claude.ai: claude-ai.md
       - ChatGPT: chatgpt.md
+      - Multiple instances: multiple-instances.md
   - Deployment:
       - Compose examples: compose-examples.md
       - Configuration: configuration.md

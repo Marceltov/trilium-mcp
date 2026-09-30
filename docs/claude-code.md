@@ -57,18 +57,7 @@ The raw token is what Trilium's ETAPI expects. A `Bearer ` prefix is also accept
 
 ## Multiple Trilium instances
 
-Run one trilium-mcp container per Trilium (each bound to its instance via `TRILIUM_SERVER_URL`), then add one connection per container under its own name. Each connection picks its own auth method, so you can mix them:
-
-```bash
-# OAuth: log in with /mcp on first use
-claude mcp add trilium-home --scope user --transport http \
-  https://trilium-home.example.com/mcp
-
-# ETAPI token
-claude mcp add trilium-work --scope user --transport http \
-  https://trilium-work.example.com/mcp \
-  --header "Authorization: WORK_TOKEN"
-```
+Add one connection per trilium-mcp container under its own name, such as `trilium-home` and `trilium-work`. See [Multiple Trilium instances](multiple-instances.md).
 
 ## User or project scope
 

@@ -78,6 +78,6 @@ Your client now has the Trilium tools. Ask it to search your notes to try it out
 ## Next steps
 
 - **Log in with your Trilium password instead of a token.** Turn on [OAuth](claude-code.md#oauth) for app clients like Claude on desktop, web and mobile; the [compose examples](compose-examples.md) show the settings.
-- **Connect more instances or clients.** See [Claude Code](claude-code.md) for multiple Trilium instances, scopes and `.mcp.json`.
+- **Connect more instances or clients.** See [Multiple Trilium instances](multiple-instances.md), and [Claude Code](claude-code.md) for scopes and `.mcp.json`.
 - **Using Claude Code?** Add [`trilium-plugin`](https://github.com/Marceltov/trilium-plugin) for ready-made skills on top of these tools.
 - **Lock it down.** Read [Security](security.md), and restrict accepted host names with `MCP_ALLOWED_HOSTS`.
