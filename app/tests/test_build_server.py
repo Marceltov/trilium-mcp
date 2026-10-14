@@ -109,6 +109,21 @@ def test_build_server_needs_no_token_and_builds_tools():
     assert "createNote" in names
 
 
+def test_instructions_unset_by_default(monkeypatch):
+    monkeypatch.delenv("MCP_INSTRUCTIONS", raising=False)
+    assert server.build_server().instructions is None
+
+
+def test_instructions_come_from_env(monkeypatch):
+    monkeypatch.setenv("MCP_INSTRUCTIONS", "  Always answer in German.\n")
+    assert server.build_server().instructions == "Always answer in German."
+
+
+def test_blank_instructions_count_as_unset(monkeypatch):
+    monkeypatch.setenv("MCP_INSTRUCTIONS", "   ")
+    assert server.build_server().instructions is None
+
+
 def test_createnote_with_null_prefix_does_not_error():
     from fastmcp import Client
 

@@ -81,6 +81,7 @@ AUTH_MODE_ENV = "MCP_AUTH_MODE"            # token | oauth | both (see resolve_a
 BASE_URL_ENV = "MCP_BASE_URL"              # public URL clients reach us at (OAuth issuer)
 OAUTH_SECRET_ENV = "MCP_OAUTH_SECRET"      # encrypts the OAuth store at rest
 CHATGPT_ENV = "CHATGPT_ACTIONS"            # true -> serve a Custom GPT Action (see register_chatgpt_routes)
+INSTRUCTIONS_ENV = "MCP_INSTRUCTIONS"      # optional standing instructions sent to every MCP client
 
 DEFAULT_SERVER_URL = "http://trilium:8080"
 DEFAULT_HOST = "0.0.0.0"
@@ -842,10 +843,17 @@ def build_server(
     # authenticates with the token in the Authorization header. An LLM has no
     # reason to mint a token from a password (login) and calling logout would
     # invalidate its own credential -- so neither belongs on the tool surface.
+    # Operator-supplied house rules, delivered in the MCP initialize response
+    # (clients such as Claude Code and claude.ai put them in the system prompt).
+    # Deliberately no default: the server has no opinion about how notes are
+    # used; see docs/configuration.md for examples.
+    instructions = os.environ.get(INSTRUCTIONS_ENV, "").strip() or None
+
     mcp = FastMCP.from_openapi(
         openapi_spec=spec,
         client=client,
         name="Trilium ETAPI MCP",
+        instructions=instructions,
         auth=auth,
         # The live ETAPI returns null for fields the spec types as plain
         # strings (e.g. branch.prefix), so response validation would reject

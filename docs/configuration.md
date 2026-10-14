@@ -14,6 +14,34 @@ All configuration is through environment variables, so the server runs cleanly a
 | `MCP_BASE_URL` | *(unset)* | Public URL clients reach this server at, e.g. `https://trilium-mcp.example.com`. The OAuth issuer: must be HTTPS (plain `http` only for `localhost`). Required for `oauth` and `both`. |
 | `MCP_OAUTH_SECRET` | *(unset)* | Encrypts the OAuth store at `/data/oauth` (mount a volume at `/data`). Required for `oauth` and `both`; changing it logs every OAuth client out. |
 | `CHATGPT_ACTIONS` | *(unset = off)* | `true` serves a ChatGPT Custom GPT Action (spec and REST proxy), see [ChatGPT on Android](chatgpt.md#android). Requires `MCP_BASE_URL`. |
+| `MCP_INSTRUCTIONS` | *(unset = none)* | Standing instructions sent to every connecting client, for house rules about how your notes should be used. See [Standing instructions](#standing-instructions). |
+
+## Standing instructions
+
+`MCP_INSTRUCTIONS` is free text that the server returns in the MCP `initialize` response. Claude Code, claude.ai and most other clients place it in the model's system prompt, so it reaches every assistant that connects, on any device, without configuring each client. The server ships no default: it has no opinion on how you use your notes.
+
+Keep it to a few sentences, since it is read at the start of every session, and describe rules, not tools. The tools already come with descriptions. Compose takes multi-line values with `|`:
+
+```yaml
+environment:
+  MCP_INSTRUCTIONS: |
+    Notes are written in German. Never delete a note; move it under "Archive" instead.
+    The "Projects" subtree is the source of truth for anything work-related.
+```
+
+A longer example, for an [LLM-maintained wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) kept in Trilium:
+
+```yaml
+environment:
+  MCP_INSTRUCTIONS: |
+    This Trilium contains an LLM-maintained wiki. When you learn something during a task
+    that would be worth having again (a decision, a non-obvious finding, how a system
+    actually behaves), offer to file it there once the task is done; do not interrupt the
+    work for it. Search for #llmWikiSchema, read that note and follow it. Write new pages
+    as drafts marked AI-assisted and never write under "Sources".
+```
+
+An unset or blank variable sends no instructions, which is the behaviour of earlier versions.
 
 ## OAuth details
 
