@@ -123,7 +123,7 @@ instead of dying with an opaque connection error.
 
 All config is environment variables (no CLI args), so the server runs cleanly as a sidecar:
 `TRILIUM_SERVER_URL` (`/etapi` is appended automatically), `MCP_HOST`, `MCP_PORT`, `MCP_PATH`,
-`TRILIUM_ETAPI_SPEC`, `MCP_ALLOWED_HOSTS`, `MCP_AUTH_MODE`, `MCP_BASE_URL`, `MCP_OAUTH_SECRET`, `CHATGPT_ACTIONS`. Host protection (DNS-rebinding) is **off by
+`TRILIUM_ETAPI_SPEC`, `MCP_ALLOWED_HOSTS`, `MCP_AUTH_MODE`, `MCP_BASE_URL`, `MCP_OAUTH_SECRET`, `CHATGPT_ACTIONS`, `MCP_INSTRUCTIONS` (optional house rules sent to every client in the MCP `initialize` response; no default). Host protection (DNS-rebinding) is **off by
 default** (any Host accepted; the token is the real gate) and only restricts when
 `MCP_ALLOWED_HOSTS` is set.
 
