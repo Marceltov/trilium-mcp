@@ -201,3 +201,67 @@ def test_sources_root_must_be_unique():
     kk = FakeKarakeep([link_bookmark("b1")])
     with pytest.raises(RuntimeError, match="found 2"):
         run(kk, tr)
+
+
+REDDIT_FEED = """<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom">
+<title>A post : selfhosted</title>
+<entry><author><name>/u/op</name></author><content type="html">&lt;div class="md"&gt;&lt;p&gt;Post body&lt;/p&gt;&lt;/div&gt;</content></entry>
+<entry><author><name>/u/commenter</name></author><content type="html">&lt;p&gt;Nice &amp;amp; useful&lt;/p&gt;</content></entry>
+</feed>"""
+POST_URL = "https://www.reddit.com/r/selfhosted/comments/abc123/a_post/"
+
+
+def reddit(handler):
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def reddit_bookmark(url=POST_URL):
+    return link_bookmark("r1", url=url, title="A post", author="Log In", publisher="Log In",
+                         htmlContent="<p>Let us know your cookie preferences</p>")
+
+
+def test_reddit_post_comes_from_its_feed_not_the_login_wall():
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        assert "Authorization" not in request.headers
+        return httpx.Response(200, text=REDDIT_FEED)
+
+    title, content, labels = ks.render_source(reddit_bookmark(), reddit(handler))
+    assert seen == ["https://www.reddit.com/r/selfhosted/comments/abc123/a_post/.rss"]
+    assert "cookie preferences" not in content and "Log In" not in content
+    assert '<h2>Post by /u/op</h2><div class="md"><p>Post body</p></div>' in content
+    assert "<h3>/u/commenter</h3><p>Nice &amp; useful</p>" in content
+    assert ("fetchedVia", "reddit-rss") in labels
+
+
+def test_reddit_share_link_is_resolved_first():
+    def handler(request):
+        if "/s/" in request.url.path:
+            return httpx.Response(301, headers={"location": POST_URL + "?share_id=x&utm_source=share"})
+        assert str(request.url) == POST_URL + ".rss"
+        return httpx.Response(200, text=REDDIT_FEED)
+
+    _, content, _ = ks.render_source(
+        reddit_bookmark("https://www.reddit.com/r/selfhosted/s/clJwh8lJvL"), reddit(handler))
+    assert "Post body" in content
+
+
+def test_reddit_refusal_waits_for_next_run():
+    rd = reddit(lambda request: httpx.Response(403, text="blocked"))
+    assert ks.render_source(reddit_bookmark(), rd) is None
+
+
+def test_reddit_rate_limit_is_retried_once(monkeypatch):
+    monkeypatch.setattr(ks.time, "sleep", lambda s: None)
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(429, headers={"x-ratelimit-reset": "5"})
+        return httpx.Response(200, text=REDDIT_FEED)
+
+    _, content, _ = ks.render_source(reddit_bookmark(), reddit(handler))
+    assert len(calls) == 2 and "Post body" in content

@@ -28,8 +28,10 @@ note makes a rerun idempotent even if tagging the bookmark failed.
 import html
 import logging
 import os
+import re
 import sys
 import time
+import xml.etree.ElementTree as ET
 from datetime import date, datetime
 
 import httpx
@@ -49,6 +51,13 @@ DEFAULT_TAG = "trilium"
 DEFAULT_DONE_TAG = "trilium-imported"
 DEFAULT_INTERVAL = 900
 PAGE_SIZE = 50
+
+# Reddit serves crawlers a cookie/login wall (also for .json and old.reddit), so
+# Karakeep's capture of a Reddit post is useless. The post's Atom feed still
+# answers anonymously, with the post body and its comments.
+REDDIT_POST = re.compile(r"^https?://(?:[a-z]+\.)?reddit\.com/r/[^/]+/(?:comments|s)/", re.I)
+REDDIT_USER_AGENT = "trilium-karakeep-sync/1.0 (personal wiki importer)"
+ATOM = "{http://www.w3.org/2005/Atom}"
 
 
 def _required_env(name: str) -> str:
@@ -111,6 +120,49 @@ def mark_done(kk: httpx.Client, bookmark_id: str, done_tag: str) -> None:
     ).raise_for_status()
 
 
+# ---- Reddit ----
+
+def reddit_client() -> httpx.Client:
+    return httpx.Client(headers={"User-Agent": REDDIT_USER_AGENT}, timeout=30)
+
+
+def _render_reddit_feed(feed_xml: str) -> str:
+    entries = ET.fromstring(feed_xml).findall(f"{ATOM}entry")
+    if not entries:
+        raise ValueError("Reddit feed has no entries")
+    parts = []
+    for i, entry in enumerate(entries):
+        author = entry.findtext(f"{ATOM}author/{ATOM}name") or "[deleted]"
+        body = entry.findtext(f"{ATOM}content") or ""
+        if i == 0:
+            parts.append(f"<h2>Post by {html.escape(author)}</h2>{body}")
+            if len(entries) > 1:
+                parts.append("<h2>Comments</h2>")
+        else:
+            parts.append(f"<h3>{html.escape(author)}</h3>{body}")
+    return "".join(parts)
+
+
+def reddit_capture(rd: httpx.Client, url: str) -> str | None:
+    """The post and its comments as HTML from Reddit's feed, or None on failure."""
+    try:
+        if "/s/" in url:  # app share link: resolve to the canonical post URL
+            resp = rd.get(url, follow_redirects=False)
+            url = resp.headers.get("location", "")
+            if not REDDIT_POST.match(url):
+                raise ValueError(f"share link did not resolve to a post: {resp.status_code}")
+        feed_url = url.split("?")[0].rstrip("/") + "/.rss"
+        resp = rd.get(feed_url, follow_redirects=True)
+        if resp.status_code == 429:  # small per-IP budget that resets within a minute
+            time.sleep(min(int(resp.headers.get("x-ratelimit-reset", "30") or 30), 60) + 1)
+            resp = rd.get(feed_url, follow_redirects=True)
+        resp.raise_for_status()
+        return _render_reddit_feed(resp.text)
+    except (httpx.HTTPError, ET.ParseError, ValueError) as exc:
+        log.warning("Reddit feed for %s unavailable: %s", url, exc)
+        return None
+
+
 # ---- Bookmark -> source note ----
 
 def _day(timestamp: str | None) -> str:
@@ -131,12 +183,16 @@ def _link(url: str) -> str:
     return f'<a href="{u}">{html.escape(url)}</a>'
 
 
-def render_source(bookmark: dict) -> tuple[str, str, list[tuple[str, str]]] | None:
+def render_source(
+    bookmark: dict, rd: httpx.Client | None = None
+) -> tuple[str, str, list[tuple[str, str]]] | None:
     """(title, html, labels) for a bookmark, or None if it isn't ready yet.
 
     A link whose crawl is still pending is retried on the next run. A link whose
     crawl produced no article becomes a link-only source, which the wiki's ingest
-    workflow knows how to collect.
+    workflow knows how to collect. A Reddit post is taken from Reddit's feed
+    (via `rd`) instead of Karakeep's capture; if Reddit refuses, the bookmark
+    waits for the next run.
     """
     content = bookmark.get("content") or {}
     kind = content.get("type")
@@ -160,6 +216,13 @@ def render_source(bookmark: dict) -> tuple[str, str, list[tuple[str, str]]] | No
                 meta.append(f"{label}: {html.escape(content[key])}")
         if content.get("datePublished"):
             meta.append(f"Published: {_day(content['datePublished'])}")
+        if REDDIT_POST.match(url) and rd is not None:
+            header.append(f"<p>{'<br>'.join(meta[:1])}</p>")  # Karakeep's author/publisher are the login wall's
+            article = reddit_capture(rd, url)
+            if article:
+                labels += [("fetchedOn", date.today().isoformat()), ("fetchedVia", "reddit-rss")]
+                return title, "".join(header) + "<hr>" + article, labels
+            return None
         header.append(f"<p>{'<br>'.join(meta)}</p>")
         article = content.get("htmlContent")
         if article:
@@ -240,7 +303,9 @@ def already_imported(tr: httpx.Client, root_id: str, bookmark_id: str) -> bool:
 
 # ---- One run ----
 
-def sync_once(kk: httpx.Client, tr: httpx.Client, tag: str, done_tag: str) -> int:
+def sync_once(
+    kk: httpx.Client, tr: httpx.Client, tag: str, done_tag: str, rd: httpx.Client | None = None
+) -> int:
     """Import every pending bookmark; return how many notes were created."""
     tag_id = find_tag_id(kk, tag)
     if tag_id is None:
@@ -254,7 +319,7 @@ def sync_once(kk: httpx.Client, tr: httpx.Client, tag: str, done_tag: str) -> in
         if already_imported(tr, root_id, bookmark["id"]):
             mark_done(kk, bookmark["id"], done_tag)
             continue
-        rendered = render_source(bookmark)
+        rendered = render_source(bookmark, rd)
         if rendered is None:
             continue
         title, content, labels = rendered
@@ -273,10 +338,10 @@ def main() -> None:
     tag = os.environ.get(KARAKEEP_TAG_ENV, DEFAULT_TAG)
     done_tag = os.environ.get(KARAKEEP_DONE_TAG_ENV, DEFAULT_DONE_TAG)
     interval = int(os.environ.get(INTERVAL_ENV, DEFAULT_INTERVAL))
-    with karakeep_client() as kk, trilium_client() as tr:
+    with karakeep_client() as kk, trilium_client() as tr, reddit_client() as rd:
         while True:
             try:
-                count = sync_once(kk, tr, tag, done_tag)
+                count = sync_once(kk, tr, tag, done_tag, rd)
                 log.info("run finished: %d new source(s)", count)
             except (httpx.HTTPError, RuntimeError) as exc:
                 log.error("run failed: %s", exc)
