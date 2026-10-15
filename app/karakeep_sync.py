@@ -45,8 +45,8 @@ KARAKEEP_DONE_TAG_ENV = "KARAKEEP_DONE_TAG"    # set on a bookmark once imported
 ETAPI_TOKEN_ENV = "TRILIUM_ETAPI_TOKEN"        # token for the Trilium the wiki lives in
 INTERVAL_ENV = "SYNC_INTERVAL"                 # seconds between runs; 0 = run once
 
-DEFAULT_TAG = "wiki"
-DEFAULT_DONE_TAG = "wiki-imported"
+DEFAULT_TAG = "trilium"
+DEFAULT_DONE_TAG = "trilium-imported"
 DEFAULT_INTERVAL = 900
 PAGE_SIZE = 50
 
