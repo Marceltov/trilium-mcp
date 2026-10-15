@@ -113,6 +113,10 @@ validates the token itself.
 
 ChatGPT's Android app can't use MCP, so `CHATGPT_ACTIONS=true` makes `register_chatgpt_routes` serve a Custom GPT Action: `chatgpt_spec` trims the ETAPI spec to 30 operations (`CHATGPT_DROP`; GPT Actions cap at 30) at `/chatgpt/openapi.json`, and `/chatgpt/etapi/*` proxies only those operations through the same `EtapiTokenAuth` client. FastMCP's auth middleware is app-wide, so custom routes get the token in every auth mode; `TokenCaptureMiddleware` exempts only the public spec path. `putNoteContentById` is JSON `{content}` in the served spec and converted back to text/plain by the proxy.
 
+### Karakeep sync
+
+`app/karakeep_sync.py` is a separate entrypoint in the same image (`command: ["python", "karakeep_sync.py"]`), not part of the MCP server: it polls Karakeep for bookmarks tagged `KARAKEEP_TAG` and creates LLM-wiki source notes under `Sources/<year>` (`#llmWikiPart=sources`), idempotent via `#karakeepId`. Unit-tested against fakes in `test_karakeep_sync.py`; documented in `docs/karakeep-sync.md`.
+
 ### Startup resilience
 
 If the OpenAPI spec can't be loaded or the auth configuration is invalid, `main()` falls back to `build_error_server()`, which

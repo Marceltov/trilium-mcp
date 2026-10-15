@@ -24,6 +24,7 @@ nav:
       - Compose examples: compose-examples.md
       - Configuration: configuration.md
       - Multiple instances: multiple-instances.md
+      - Karakeep as a wiki source: karakeep-sync.md
       - Reverse proxy and TLS: reverse-proxy.md
       - Security: security.md
   - Internals:

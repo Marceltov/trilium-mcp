@@ -26,7 +26,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
-COPY app/server.py app/trilium-etapi.openapi ./
+COPY app/server.py app/karakeep_sync.py app/trilium-etapi.openapi ./
 
 # Put the venv on PATH so `python` is the venv interpreter.
 ENV PATH="/app/.venv/bin:$PATH"
