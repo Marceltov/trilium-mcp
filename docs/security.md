@@ -1,8 +1,8 @@
 # Security
 
-The MCP endpoint grants **full read and write access to your notes**. Every request must carry either a Trilium ETAPI token or an OAuth access token issued by this server in the `Authorization` header. Requests with no `Authorization` header are rejected with `401` before reaching any tool.
+The MCP endpoint grants **full read and write access to your notes**. Every request must carry either a Trilium Notes ETAPI token or an OAuth access token issued by this server in the `Authorization` header. Requests with no `Authorization` header are rejected with `401` before reaching any tool.
 
-The server never validates an ETAPI token itself: Trilium enforces validity when the forwarded request reaches the ETAPI. In token-only mode the server holds no secret of its own. The `/health` endpoint is always unauthenticated, for the container healthcheck.
+The server never validates an ETAPI token itself: Trilium Notes enforces validity when the forwarded request reaches the ETAPI. In token-only mode the server holds no secret of its own. The `/health` endpoint is always unauthenticated, for the container healthcheck.
 
 ## Tokens in transit
 

@@ -4,7 +4,7 @@ All configuration is through environment variables, so the server runs cleanly a
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `TRILIUM_SERVER_URL` | `http://trilium:8080` | Base URL of the Trilium instance (`/etapi` is appended automatically). |
+| `TRILIUM_SERVER_URL` | `http://trilium:8080` | Base URL of the Trilium Notes instance (`/etapi` is appended automatically). |
 | `MCP_HOST` | `0.0.0.0` | Interface the MCP server binds to. |
 | `MCP_PORT` | `8081` | Port the MCP server listens on. |
 | `MCP_PATH` | `/mcp` | HTTP path the MCP endpoint is served at. |
@@ -29,7 +29,7 @@ environment:
     The "Projects" subtree is the source of truth for anything work-related.
 ```
 
-A longer example, for an [LLM-maintained wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) kept in Trilium:
+A longer example, for an [LLM-maintained wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) kept in Trilium Notes:
 
 ```yaml
 environment:
@@ -45,10 +45,10 @@ An unset or blank variable sends no instructions, which is the behaviour of earl
 
 ## OAuth details
 
-With `MCP_BASE_URL` and `MCP_OAUTH_SECRET` set, clients that support the MCP authorization spec need only the URL. On first connect they open a login page served by this server, you enter your **Trilium password**, and the server mints a dedicated ETAPI token for that client (visible and deletable in Trilium's ETAPI token list).
+With `MCP_BASE_URL` and `MCP_OAUTH_SECRET` set, clients that support the MCP authorization spec need only the URL. On first connect they open a login page served by this server, you enter your **Trilium Notes password**, and the server mints a dedicated ETAPI token for that client (visible and deletable in Trilium Notes' ETAPI token list).
 
-- The password goes to Trilium once and is never stored.
-- Revoking a client's OAuth token also deletes its ETAPI token in Trilium.
+- The password goes to Trilium Notes once and is never stored.
+- Revoking a client's OAuth token also deletes its ETAPI token in Trilium Notes.
 - Raw ETAPI tokens in the `Authorization` header (with or without `Bearer `) keep working in the default `both` mode.
 - Mount a volume at `/data` (see the [compose examples](compose-examples.md)) so logins survive the container being recreated, for example on an image update.
 
@@ -60,7 +60,7 @@ You rarely need `MCP_AUTH_MODE`. Adding the two OAuth variables is enough to tur
 
 Set it explicitly when:
 
-- **The server is open to the internet and you only want OAuth.** In the default `both` mode, any token the server didn't issue is passed to Trilium as an ETAPI token. `oauth` turns that off, so clients can only get in through a login you can revoke, never with a long-lived token pasted into their config.
+- **The server is open to the internet and you only want OAuth.** In the default `both` mode, any token the server didn't issue is passed to Trilium Notes as an ETAPI token. `oauth` turns that off, so clients can only get in through a login you can revoke, never with a long-lived token pasted into their config.
 - **You want a mistake to stop the server.** With `oauth` or `both` set explicitly, a missing `MCP_BASE_URL` or `MCP_OAUTH_SECRET` starts the server in the [`startup_error` state](security.md#startup-errors). When the mode is worked out automatically, the server quietly falls back to token-only and only logs a warning.
 
 `token` turns OAuth off without deleting its variables.

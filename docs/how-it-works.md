@@ -5,13 +5,13 @@ hide:
 
 # How it works
 
-trilium-mcp turns every ETAPI endpoint into an MCP tool and forwards each call to Trilium with an ETAPI token: either the one the client sent, or, with OAuth, the one it minted for that client at login.
+The Trilium Notes MCP server turns every ETAPI endpoint into an MCP tool and forwards each call to Trilium Notes with an ETAPI token: either the one the client sent, or, with OAuth, the one it minted for that client at login.
 
 ```mermaid
 --8<-- "docs/diagrams/architecture.mmd"
 ```
 
-trilium-mcp runs as a container sidecar and talks to Trilium over the internal Docker network, so Trilium's ETAPI is never exposed publicly on its own. Clients reach it through a TLS-terminating reverse proxy or directly over a trusted LAN.
+The Trilium Notes MCP server runs as a container sidecar and talks to Trilium Notes over the internal Docker network, so Trilium Notes' ETAPI is never exposed publicly on its own. Clients reach it through a TLS-terminating reverse proxy or directly over a trusted LAN.
 
 ## Tools from the OpenAPI spec
 
@@ -24,7 +24,7 @@ At startup the server reads the bundled ETAPI OpenAPI spec and generates one too
 
 ## ETAPI token
 
-The client's token passes through unchanged. trilium-mcp stores nothing.
+The client's token passes through unchanged. The Trilium Notes MCP server stores nothing.
 
 ```mermaid
 sequenceDiagram

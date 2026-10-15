@@ -11,8 +11,8 @@
 
 ## Local development environment
 
-The repo ships a ready-to-run dev stack: a throwaway Trilium instance seeded with
-Trilium's **default demo notes**, plus the MCP server built from local source.
+The repo ships a ready-to-run dev stack: a throwaway Trilium Notes instance seeded with
+Trilium Notes' **default demo notes**, plus the MCP server built from local source.
 
 ```bash
 docker compose up -d --build
@@ -39,13 +39,13 @@ curl http://localhost:9091/health   # -> ok
 Both are committed as a **development fixture** and are scoped to this disposable
 instance only — do not reuse them anywhere real.
 
-- **Trilium web UI:** to log in to the seed instance at http://localhost:9090,
+- **Trilium Notes web UI:** to log in to the seed instance at http://localhost:9090,
   use the password `trilium-mcp`.
 - **ETAPI token:** in [`etapi.token`](etapi.token) — the credential the MCP client
   passes in the `Authorization` header.
 
 The seeded database lives in `trilium-data/` (`config.ini` + `document.db`). Only
-Trilium's default demo notes are present. Volatile per-run files (logs, tmp,
+Trilium Notes' default demo notes are present. Volatile per-run files (logs, tmp,
 session secret, SQLite WAL/SHM) are gitignored so each checkout starts clean.
 
 ### Talking to the MCP server
@@ -79,7 +79,7 @@ docker compose up -d
 Tests live in `app/tests/` and come in two kinds:
 
 - **Unit tests** (`app/tests/test_*.py`) run against a mock ETAPI transport — no
-  running Trilium required.
+  running Trilium Notes required.
 - **Live integration tests** (`app/tests/live/`) drive the real MCP server over
   HTTP against the running stack, covering every MCP tool. They **auto-skip** when
   the MCP `/health` endpoint is unreachable.
