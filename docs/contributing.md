@@ -1,6 +1,6 @@
 # Contributing
 
-The repo ships a ready-to-run development stack: a throwaway Trilium seeded with the default demo notes, plus the MCP server built from local source.
+The repo ships a ready-to-run development stack: a throwaway Trilium Notes instance seeded with the default demo notes, plus the MCP server built from local source.
 
 ```bash
 git clone https://github.com/Marceltov/trilium-mcp
@@ -27,4 +27,4 @@ uvx --with mkdocs-material mkdocs serve
 
 ## License
 
-trilium-mcp is licensed under the [GNU Affero General Public License v3.0 or later](https://github.com/Marceltov/trilium-mcp/blob/main/LICENSE). You may use, modify and redistribute it, but any modified version, **including one you run as a network service**, must be released under the same license with its source made available to its users, and the original copyright notice preserved.
+The Trilium Notes MCP server is licensed under the [GNU Affero General Public License v3.0 or later](https://github.com/Marceltov/trilium-mcp/blob/main/LICENSE). You may use, modify and redistribute it, but any modified version, **including one you run as a network service**, must be released under the same license with its source made available to its users, and the original copyright notice preserved.

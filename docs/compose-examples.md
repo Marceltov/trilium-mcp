@@ -1,14 +1,14 @@
 # Compose examples
 
-trilium-mcp runs next to a Trilium server you already have. Pick the example that matches how Trilium is deployed: in the same compose file, or as its own compose project. Both are in the repo's [`examples/`](https://github.com/Marceltov/trilium-mcp/tree/main/examples) directory.
+The Trilium Notes MCP server runs next to a Trilium Notes server you already have. Pick the example that matches how Trilium Notes is deployed: in the same compose file, or as its own compose project. Both are in the repo's [`examples/`](https://github.com/Marceltov/trilium-mcp/tree/main/examples) directory.
 
-## Don't have Trilium yet?
+## Don't have Trilium Notes yet?
 
-trilium-mcp connects to an existing Trilium server. To set one up, follow Trilium's own guide to [running Trilium with Docker](https://docs.triliumnotes.org/user-guide/setup/server/installation/docker), then come back here. Trilium's [documentation](https://docs.triliumnotes.org/) covers the other ways to install it.
+The Trilium Notes MCP server connects to an existing Trilium Notes server. To set one up, follow Trilium Notes' own guide to [running Trilium Notes with Docker](https://docs.triliumnotes.org/user-guide/setup/server/installation/docker), then come back here. Trilium Notes' [documentation](https://docs.triliumnotes.org/) covers the other ways to install it.
 
-## In Trilium's compose file
+## In Trilium Notes' compose file
 
-Add the `trilium-mcp` service and the `mcp-oauth` volume to the `docker-compose.yaml` that runs Trilium. Its settings go in a separate `trilium-mcp.env`, so they don't mix with the `.env` Trilium may already use. Copy `trilium-mcp.env.example` to `trilium-mcp.env` next to the compose file, adjust it, and run `docker compose up -d trilium-mcp`.
+Add the `trilium-mcp` service and the `mcp-oauth` volume to the `docker-compose.yaml` that runs Trilium Notes. Its settings go in a separate `trilium-mcp.env`, so they don't mix with the `.env` Trilium Notes may already use. Copy `trilium-mcp.env.example` to `trilium-mcp.env` next to the compose file, adjust it, and run `docker compose up -d trilium-mcp`.
 
 === "docker-compose.yaml"
 

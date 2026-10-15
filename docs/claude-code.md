@@ -1,6 +1,6 @@
 # Claude Code
 
-Register trilium-mcp with `claude mcp add`. Pick the [auth method](connecting.md#choosing-an-auth-method) per connection.
+Register the Trilium Notes MCP server with `claude mcp add`. Pick the [auth method](connecting.md#choosing-an-auth-method) per connection.
 
 ## OAuth
 
@@ -13,11 +13,11 @@ claude mcp add trilium --scope user --transport http \
 
 In Claude Code, run `/mcp` and pick the server to authenticate.
 
-Each client gets its own ETAPI token, visible and deletable under *Options → ETAPI* in Trilium. Deleting it there, or revoking the OAuth token, disconnects just that client.
+Each client gets its own ETAPI token, visible and deletable under *Options → ETAPI* in Trilium Notes. Deleting it there, or revoking the OAuth token, disconnects just that client.
 
 ## ETAPI token
 
-The ETAPI token is the credential: pass it in the `Authorization` header. Point the URL at wherever trilium-mcp is reachable.
+The ETAPI token is the credential: pass it in the `Authorization` header. Point the URL at wherever the Trilium Notes MCP server is reachable.
 
 === "Behind a reverse proxy (TLS)"
 

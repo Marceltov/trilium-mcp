@@ -1,8 +1,8 @@
-# Multiple Trilium instances
+# Multiple Trilium Notes instances
 
-One trilium-mcp container serves exactly one Trilium, the one in its `TRILIUM_SERVER_URL`. To reach several (say a personal and a work Trilium), run one container per instance and add each to your client under its own name. The name keeps them apart: Claude sees `trilium-home` and `trilium-work` as separate servers with separate tools, so you can say which notes you mean.
+One Trilium Notes MCP server container serves exactly one Trilium Notes instance, the one in its `TRILIUM_SERVER_URL`. To reach several (say a personal and a work Trilium Notes instance), run one container per instance and add each to your client under its own name. The name keeps them apart: Claude sees `trilium-home` and `trilium-work` as separate servers with separate tools, so you can say which notes you mean.
 
-## 1. One container per Trilium
+## 1. One container per Trilium Notes instance
 
 Give each container its own name, env file, OAuth volume and host port:
 

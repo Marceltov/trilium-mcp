@@ -1,20 +1,20 @@
 # Alternatives
 
-## Trilium's built-in MCP server
+## Trilium Notes' built-in MCP server
 
-Since v0.103, Trilium ships its own [MCP server](https://docs.triliumnotes.org/user-guide/llm/mcp). It is off by default (turn it on under *Options → AI/LLM*), marked experimental, and speaks HTTP with an ETAPI token as the Bearer credential. It exposes the same tools as Trilium's built-in AI chat, limited by the *Note access* setting.
+Since v0.103, Trilium Notes ships its own [MCP server](https://docs.triliumnotes.org/user-guide/llm/mcp). It is off by default (turn it on under *Options → AI/LLM*), marked experimental, and speaks HTTP with an ETAPI token as the Bearer credential. It exposes the same tools as Trilium Notes' built-in AI chat, limited by the *Note access* setting.
 
-If you only need those tools and your client can send a static token, the built-in server needs no extra container. trilium-mcp complements it where you want the assistant to be your everyday front end to Trilium, from the Claude apps and claude.ai as much as from your desk:
+If you only need those tools and your client can send a static token, the built-in server needs no extra container. The Trilium Notes MCP server complements it where you want the assistant to be your everyday front end to Trilium Notes, from the Claude apps and claude.ai as much as from your desk:
 
 - **The whole ETAPI**: all 38 endpoints as tools, generated from the OpenAPI spec, including branches, attributes, attachments, revisions, journal notes and subtree export.
-- **OAuth login**: claude.ai, the Claude apps and ChatGPT connectors sign in with your Trilium password instead of a pasted token, and each client gets its own revocable ETAPI token.
-- **Older Trilium versions**: it talks to the ETAPI from outside, so it works with Trilium releases before v0.103.
+- **OAuth login**: claude.ai, the Claude apps and ChatGPT connectors sign in with your Trilium Notes password instead of a pasted token, and each client gets its own revocable ETAPI token.
+- **Older Trilium Notes versions**: it talks to the ETAPI from outside, so it works with Trilium Notes releases before v0.103.
 
 ## Other MCP servers
 
-Other open-source Trilium/TriliumNext MCP servers exist too. Most are stdio subprocesses that connect a single local client to one Trilium using a token baked into the environment or a config file.
+Other open-source Trilium Notes/TriliumNext MCP servers exist too. Most are stdio subprocesses that connect a single local client to one Trilium Notes instance using a token baked into the environment or a config file.
 
-trilium-mcp is instead **HTTP-native** and forwards each client's token **per request**, so a single sidecar can serve many clients, each presenting its own token, and in token mode stores no secret of its own. Like the others, one sidecar fronts one Trilium, set via `TRILIUM_SERVER_URL`; run one per instance. Its tools are also **generated from the ETAPI OpenAPI spec** (full endpoint coverage) rather than hand-written.
+The Trilium Notes MCP server is instead **HTTP-native** and forwards each client's token **per request**, so a single sidecar can serve many clients, each presenting its own token, and in token mode stores no secret of its own. Like the others, one sidecar fronts one Trilium Notes instance, set via `TRILIUM_SERVER_URL`; run one per instance. Its tools are also **generated from the ETAPI OpenAPI spec** (full endpoint coverage) rather than hand-written.
 
 | Project | Language | Transport | Token handling | Tools | Docker image | Latest activity |
 | ------- | -------- | --------- | -------------- | ----- | ------------ | --------------- |

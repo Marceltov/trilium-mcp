@@ -1,16 +1,16 @@
 # Quick start
 
-Four steps: create a token in Trilium, add one service to your compose file, make it reachable, and point your client at it. You need a running Trilium server; [don't have one yet?](compose-examples.md#dont-have-trilium-yet)
+Four steps: create a token in Trilium Notes, add one service to your compose file, make it reachable, and point your client at it. You need a running Trilium Notes server; [don't have one yet?](compose-examples.md#dont-have-trilium-yet)
 
 ## 1. Create an ETAPI token
 
-In Trilium, open *Options → ETAPI → Create new ETAPI token*. This token is the only credential: trilium-mcp stores no secret and forwards the raw token straight to Trilium. Each client presents its own token per request.
+In Trilium Notes, open *Options → ETAPI → Create new ETAPI token*. This token is the only credential: the Trilium Notes MCP server stores no secret and forwards the raw token straight to Trilium Notes. Each client presents its own token per request.
 
-![Trilium Options → ETAPI screen with the Create new ETAPI token button](create-etapi.png){ width="720" }
+![Trilium Notes Options → ETAPI screen with the Create new ETAPI token button](create-etapi.png){ width="720" }
 
-## 2. Add trilium-mcp to your compose file
+## 2. Add the Trilium Notes MCP server to your compose file
 
-Add one service to the `docker-compose.yaml` that runs your Trilium. It pulls the prebuilt image, so there's nothing to clone or build:
+Add one service to the `docker-compose.yaml` that runs your Trilium Notes instance. It pulls the prebuilt image, so there's nothing to clone or build:
 
 ```yaml
 services:
@@ -28,7 +28,7 @@ services:
       - "8081:8081"
 ```
 
-Both services share the compose network, so `trilium` resolves to your Trilium container. Is Trilium in its own compose project? Use the [separate compose project](compose-examples.md#as-a-separate-compose-project) example instead.
+Both services share the compose network, so `trilium` resolves to your Trilium Notes container. Is Trilium Notes in its own compose project? Use the [separate compose project](compose-examples.md#as-a-separate-compose-project) example instead.
 
 Start it and check that it's up:
 
