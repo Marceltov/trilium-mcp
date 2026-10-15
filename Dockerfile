@@ -19,7 +19,8 @@ RUN uv sync --frozen --no-dev
 # ---- runtime: slim python with just the venv + app (no uv) ----
 FROM python:3.12-slim-bookworm
 
-# curl is used by the container healthcheck.
+# curl is used by the container healthcheck, and by karakeep_sync for Reddit
+# (which blocks Python's TLS client but serves curl).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*

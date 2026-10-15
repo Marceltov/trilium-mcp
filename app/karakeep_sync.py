@@ -29,9 +29,11 @@ import html
 import logging
 import os
 import re
+import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from datetime import date, datetime
 
 import httpx
@@ -122,45 +124,131 @@ def mark_done(kk: httpx.Client, bookmark_id: str, done_tag: str) -> None:
 
 # ---- Reddit ----
 
-def reddit_client() -> httpx.Client:
-    return httpx.Client(headers={"User-Agent": REDDIT_USER_AGENT}, timeout=30)
+class RedditError(Exception):
+    pass
 
 
-def _render_reddit_feed(feed_xml: str) -> str:
-    entries = ET.fromstring(feed_xml).findall(f"{ATOM}entry")
+# (url, follow_redirects) -> (status, body, {"location", "x-ratelimit-reset"})
+Fetch = Callable[[str, bool], tuple[int, str, dict[str, str]]]
+
+
+def curl_fetch(url: str, follow_redirects: bool = True) -> tuple[int, str, dict[str, str]]:
+    """GET via curl. Reddit answers Python's TLS client with "403 Blocked" even
+    with curl's exact headers, but serves curl; the image ships curl anyway."""
+    if not url.startswith(("https://", "http://")):
+        raise RedditError("not an http(s) URL")
+    cmd = [
+        "curl", "-sS", "--max-time", "30", "-A", REDDIT_USER_AGENT,
+        "-w", "\n%{http_code}\t%{redirect_url}\t%header{x-ratelimit-reset}",
+    ]
+    if follow_redirects:
+        cmd.append("-L")
+    try:
+        out = subprocess.run(cmd + ["--url", url], capture_output=True, check=True, timeout=40)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise RedditError(f"curl failed: {exc}") from None  # no URL: feed URLs carry a key
+    body, _, trailer = out.stdout.decode("utf-8", "replace").rpartition("\n")
+    code, location, reset = (trailer.split("\t") + ["", ""])[:3]
+    return int(code), body, {"location": location, "x-ratelimit-reset": reset}
+
+
+REDDIT_POST_ID = re.compile(r"/comments/([a-z0-9]+)", re.I)
+
+
+def _post_id(url: str) -> str | None:
+    match = REDDIT_POST_ID.search(url)
+    return match.group(1).lower() if match else None
+
+
+def _entries(feed_xml: str) -> list[tuple[str, str, str]]:
+    """(link, author, content html) for each entry of a Reddit Atom feed."""
+    return [
+        (
+            (entry.find(f"{ATOM}link").get("href") if entry.find(f"{ATOM}link") is not None else ""),
+            entry.findtext(f"{ATOM}author/{ATOM}name") or "[deleted]",
+            entry.findtext(f"{ATOM}content") or "",
+        )
+        for entry in ET.fromstring(feed_xml).findall(f"{ATOM}entry")
+    ]
+
+
+def _post_html(author: str, body: str) -> str:
+    return f"<h2>Post by {html.escape(author)}</h2>{body}"
+
+
+def _render_post_feed(feed_xml: str) -> str:
+    entries = _entries(feed_xml)
     if not entries:
         raise ValueError("Reddit feed has no entries")
-    parts = []
-    for i, entry in enumerate(entries):
-        author = entry.findtext(f"{ATOM}author/{ATOM}name") or "[deleted]"
-        body = entry.findtext(f"{ATOM}content") or ""
-        if i == 0:
-            parts.append(f"<h2>Post by {html.escape(author)}</h2>{body}")
-            if len(entries) > 1:
-                parts.append("<h2>Comments</h2>")
-        else:
-            parts.append(f"<h3>{html.escape(author)}</h3>{body}")
+    (_, author, body), comments = entries[0], entries[1:]
+    parts = [_post_html(author, body)]
+    if comments:
+        parts.append("<h2>Comments</h2>")
+        parts += [f"<h3>{html.escape(a)}</h3>{b}" for _, a, b in comments]
     return "".join(parts)
 
 
-def reddit_capture(rd: httpx.Client, url: str) -> str | None:
-    """The post and its comments as HTML from Reddit's feed, or None on failure."""
-    try:
-        if "/s/" in url:  # app share link: resolve to the canonical post URL
-            resp = rd.get(url, follow_redirects=False)
-            url = resp.headers.get("location", "")
-            if not REDDIT_POST.match(url):
-                raise ValueError(f"share link did not resolve to a post: {resp.status_code}")
-        feed_url = url.split("?")[0].rstrip("/") + "/.rss"
-        resp = rd.get(feed_url, follow_redirects=True)
-        if resp.status_code == 429:  # small per-IP budget that resets within a minute
-            time.sleep(min(int(resp.headers.get("x-ratelimit-reset", "30") or 30), 60) + 1)
-            resp = rd.get(feed_url, follow_redirects=True)
-        resp.raise_for_status()
-        return _render_reddit_feed(resp.text)
-    except (httpx.HTTPError, ET.ParseError, ValueError) as exc:
-        log.warning("Reddit feed for %s unavailable: %s", url, exc)
-        return None
+class RedditSource:
+    """Gets Reddit posts' text without hitting Reddit's crawler login wall.
+
+    First choice: the user's private Reddit feeds that Karakeep subscribes to
+    (e.g. saved.rss?feed=<key>). Their URLs carry the feed key, so Reddit serves
+    them, and each entry holds the post body. They are fetched once per run, and
+    only if a Reddit bookmark is being imported. Fallback for posts not in those
+    feeds (older saves, links shared from the app): the post's own .rss, which
+    adds comments but has a tiny anonymous rate limit.
+    """
+
+    def __init__(self, kk: httpx.Client, fetch: Fetch = curl_fetch):
+        self.kk = kk
+        self.fetch = fetch
+        self._feed_posts: dict[str, str] | None = None
+
+    def _get(self, url: str) -> str:
+        status, body, headers = self.fetch(url, True)
+        if status == 429:  # small per-IP budget that resets within a minute
+            time.sleep(min(int(headers.get("x-ratelimit-reset") or 30), 60) + 1)
+            status, body, headers = self.fetch(url, True)
+        if status != 200:
+            raise RedditError(f"HTTP {status}")
+        return body
+
+    def feed_posts(self) -> dict[str, str]:
+        if self._feed_posts is None:
+            self._feed_posts = {}
+            try:
+                feeds = self.kk.get("/feeds").raise_for_status().json()["feeds"]
+            except httpx.HTTPError as exc:
+                log.warning("could not list Karakeep feeds: %s", exc)
+                feeds = []
+            for feed in feeds:
+                if not feed.get("enabled", True) or "reddit.com" not in feed["url"]:
+                    continue
+                try:
+                    for link, author, body in _entries(self._get(feed["url"])):
+                        if (post_id := _post_id(link)) and body:
+                            self._feed_posts[post_id] = _post_html(author, body)
+                except (RedditError, ET.ParseError) as exc:
+                    log.warning("Reddit feed %r unavailable: %s", feed.get("name"), exc)
+        return self._feed_posts
+
+    def capture(self, url: str) -> tuple[str, str] | None:
+        """(html, fetchedVia) for a post, or None if Reddit refused."""
+        if (post_id := _post_id(url)) and post_id in self.feed_posts():
+            return self.feed_posts()[post_id], "reddit-feed"
+        try:
+            if "/s/" in url:  # app share link: resolve to the canonical post URL
+                status, _, headers = self.fetch(url, False)
+                url = headers.get("location", "")
+                if not REDDIT_POST.match(url):
+                    raise RedditError(f"share link did not resolve to a post: HTTP {status}")
+                if (post_id := _post_id(url)) and post_id in self.feed_posts():
+                    return self.feed_posts()[post_id], "reddit-feed"
+            feed_url = url.split("?")[0].rstrip("/") + "/.rss"
+            return _render_post_feed(self._get(feed_url)), "reddit-post-feed"
+        except (RedditError, ET.ParseError, ValueError) as exc:
+            log.warning("Reddit post %s unavailable: %s", url, exc)
+            return None
 
 
 # ---- Bookmark -> source note ----
@@ -184,15 +272,15 @@ def _link(url: str) -> str:
 
 
 def render_source(
-    bookmark: dict, rd: httpx.Client | None = None
+    bookmark: dict, reddit: RedditSource | None = None
 ) -> tuple[str, str, list[tuple[str, str]]] | None:
     """(title, html, labels) for a bookmark, or None if it isn't ready yet.
 
     A link whose crawl is still pending is retried on the next run. A link whose
     crawl produced no article becomes a link-only source, which the wiki's ingest
-    workflow knows how to collect. A Reddit post is taken from Reddit's feed
-    (via `rd`) instead of Karakeep's capture; if Reddit refuses, the bookmark
-    waits for the next run.
+    workflow knows how to collect. A Reddit post is taken from Reddit's feeds
+    (see RedditSource) instead of Karakeep's capture, which is a login wall; if
+    Reddit refuses, the bookmark waits for the next run.
     """
     content = bookmark.get("content") or {}
     kind = content.get("type")
@@ -216,13 +304,14 @@ def render_source(
                 meta.append(f"{label}: {html.escape(content[key])}")
         if content.get("datePublished"):
             meta.append(f"Published: {_day(content['datePublished'])}")
-        if REDDIT_POST.match(url) and rd is not None:
+        if REDDIT_POST.match(url) and reddit is not None:
             header.append(f"<p>{'<br>'.join(meta[:1])}</p>")  # Karakeep's author/publisher are the login wall's
-            article = reddit_capture(rd, url)
-            if article:
-                labels += [("fetchedOn", date.today().isoformat()), ("fetchedVia", "reddit-rss")]
-                return title, "".join(header) + "<hr>" + article, labels
-            return None
+            captured = reddit.capture(url)
+            if captured is None:
+                return None
+            article, via = captured
+            labels += [("fetchedOn", date.today().isoformat()), ("fetchedVia", via)]
+            return title, "".join(header) + "<hr>" + article, labels
         header.append(f"<p>{'<br>'.join(meta)}</p>")
         article = content.get("htmlContent")
         if article:
@@ -304,7 +393,7 @@ def already_imported(tr: httpx.Client, root_id: str, bookmark_id: str) -> bool:
 # ---- One run ----
 
 def sync_once(
-    kk: httpx.Client, tr: httpx.Client, tag: str, done_tag: str, rd: httpx.Client | None = None
+    kk: httpx.Client, tr: httpx.Client, tag: str, done_tag: str, reddit_fetch: Fetch = curl_fetch
 ) -> int:
     """Import every pending bookmark; return how many notes were created."""
     tag_id = find_tag_id(kk, tag)
@@ -312,6 +401,7 @@ def sync_once(
         log.info("no Karakeep tag %r yet; nothing to import", tag)
         return 0
     root_id = sources_root(tr)
+    reddit = RedditSource(kk, reddit_fetch)
     created = 0
     for bookmark in tagged_bookmarks(kk, tag_id):
         if any(t["name"] == done_tag for t in bookmark.get("tags", [])):
@@ -319,7 +409,7 @@ def sync_once(
         if already_imported(tr, root_id, bookmark["id"]):
             mark_done(kk, bookmark["id"], done_tag)
             continue
-        rendered = render_source(bookmark, rd)
+        rendered = render_source(bookmark, reddit)
         if rendered is None:
             continue
         title, content, labels = rendered
@@ -338,10 +428,10 @@ def main() -> None:
     tag = os.environ.get(KARAKEEP_TAG_ENV, DEFAULT_TAG)
     done_tag = os.environ.get(KARAKEEP_DONE_TAG_ENV, DEFAULT_DONE_TAG)
     interval = int(os.environ.get(INTERVAL_ENV, DEFAULT_INTERVAL))
-    with karakeep_client() as kk, trilium_client() as tr, reddit_client() as rd:
+    with karakeep_client() as kk, trilium_client() as tr:
         while True:
             try:
-                count = sync_once(kk, tr, tag, done_tag, rd)
+                count = sync_once(kk, tr, tag, done_tag)
                 log.info("run finished: %d new source(s)", count)
             except (httpx.HTTPError, RuntimeError) as exc:
                 log.error("run failed: %s", exc)

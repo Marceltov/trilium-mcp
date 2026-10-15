@@ -32,8 +32,9 @@ def link_bookmark(bid, **content):
 
 
 class FakeKarakeep:
-    def __init__(self, bookmarks, tags=("wiki",)):
+    def __init__(self, bookmarks, tags=("wiki",), feeds=()):
         self.bookmarks = bookmarks
+        self.feeds = list(feeds)
         self.tags = [{"id": f"t-{n}", "name": n} for n in tags]
         self.attached = []
 
@@ -45,6 +46,8 @@ class FakeKarakeep:
             return httpx.Response(200, json={
                 "tags": [t for t in self.tags if needle in t["name"]], "nextCursor": None,
             })
+        if path == "/feeds":
+            return httpx.Response(200, json={"feeds": self.feeds})
         if path == "/tags/t-wiki/bookmarks":
             if request.url.params.get("cursor") == "p2":
                 return httpx.Response(200, json={"bookmarks": self.bookmarks[1:], "nextCursor": None})
@@ -97,7 +100,10 @@ def run(kk_fake, tr_fake):
                       transport=httpx.MockTransport(kk_fake.handler))
     tr = httpx.Client(base_url="http://trilium/etapi", headers={"Authorization": "etapi-token"},
                       transport=httpx.MockTransport(tr_fake.handler))
-    return ks.sync_once(kk, tr, "wiki", "wiki-imported")
+    def no_network(url, follow_redirects):
+        raise AssertionError(f"unexpected Reddit fetch: {url}")
+
+    return ks.sync_once(kk, tr, "wiki", "wiki-imported", no_network)
 
 
 def test_imports_link_bookmarks_across_pages_into_year_folder():
@@ -205,14 +211,31 @@ def test_sources_root_must_be_unique():
 
 REDDIT_FEED = """<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom">
 <title>A post : selfhosted</title>
-<entry><author><name>/u/op</name></author><content type="html">&lt;div class="md"&gt;&lt;p&gt;Post body&lt;/p&gt;&lt;/div&gt;</content></entry>
-<entry><author><name>/u/commenter</name></author><content type="html">&lt;p&gt;Nice &amp;amp; useful&lt;/p&gt;</content></entry>
+<entry><author><name>/u/op</name></author><link href="https://www.reddit.com/r/selfhosted/comments/abc123/a_post/"/><content type="html">&lt;div class="md"&gt;&lt;p&gt;Post body&lt;/p&gt;&lt;/div&gt;</content></entry>
+<entry><author><name>/u/commenter</name></author><link href="https://www.reddit.com/r/selfhosted/comments/abc123/a_post/c1/"/><content type="html">&lt;p&gt;Nice &amp;amp; useful&lt;/p&gt;</content></entry>
 </feed>"""
+SAVED_FEED = """<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom">
+<entry><author><name>/u/op</name></author><link href="https://www.reddit.com/r/selfhosted/comments/abc123/a_post/"/><content type="html">&lt;p&gt;Saved body&lt;/p&gt;</content></entry>
+<entry><author><name>/u/other</name></author><link href="https://www.reddit.com/r/homelab/comments/zzz999/other/"/><content type="html">&lt;p&gt;Other&lt;/p&gt;</content></entry>
+</feed>"""
+SAVED_URL = "https://www.reddit.com/saved.rss?feed=secret&user=me"
 POST_URL = "https://www.reddit.com/r/selfhosted/comments/abc123/a_post/"
 
 
-def reddit(handler):
-    return httpx.Client(transport=httpx.MockTransport(handler))
+def reddit_source(handler, feeds=()):
+    kk = FakeKarakeep([], feeds=feeds)
+    kk_client = httpx.Client(base_url="http://kk/api/v1", headers={"Authorization": "Bearer kk-key"},
+                             transport=httpx.MockTransport(kk.handler))
+    def fetch(url, follow_redirects):
+        resp = handler(httpx.Request("GET", url))
+        if follow_redirects and resp.status_code in (301, 302):
+            resp = handler(httpx.Request("GET", resp.headers["location"]))
+        return resp.status_code, resp.text, {
+            "location": resp.headers.get("location", ""),
+            "x-ratelimit-reset": resp.headers.get("x-ratelimit-reset", ""),
+        }
+
+    return ks.RedditSource(kk_client, fetch)
 
 
 def reddit_bookmark(url=POST_URL):
@@ -220,20 +243,46 @@ def reddit_bookmark(url=POST_URL):
                          htmlContent="<p>Let us know your cookie preferences</p>")
 
 
-def test_reddit_post_comes_from_its_feed_not_the_login_wall():
+def test_reddit_post_comes_from_saved_feed_first():
     seen = []
 
     def handler(request):
         seen.append(str(request.url))
-        assert "Authorization" not in request.headers
+        return httpx.Response(200, text=SAVED_FEED)
+
+    source = reddit_source(handler, feeds=[{"id": "f1", "name": "Reddit", "url": SAVED_URL, "enabled": True}])
+    title, content, labels = ks.render_source(reddit_bookmark(), source)
+    assert seen == [SAVED_URL]
+    assert "cookie preferences" not in content and "Log In" not in content
+    assert "<h2>Post by /u/op</h2><p>Saved body</p>" in content
+    assert ("fetchedVia", "reddit-feed") in labels
+    # The saved feed is fetched once per run, however many posts use it.
+    ks.render_source(reddit_bookmark("https://www.reddit.com/r/homelab/comments/zzz999/other/"), source)
+    assert seen == [SAVED_URL]
+
+
+def test_non_reddit_feeds_are_ignored():
+    def handler(request):
+        assert str(request.url) == POST_URL + ".rss"
         return httpx.Response(200, text=REDDIT_FEED)
 
-    title, content, labels = ks.render_source(reddit_bookmark(), reddit(handler))
-    assert seen == ["https://www.reddit.com/r/selfhosted/comments/abc123/a_post/.rss"]
-    assert "cookie preferences" not in content and "Log In" not in content
+    source = reddit_source(handler, feeds=[{"id": "f2", "name": "HN", "url": "https://hnrss.org/newest", "enabled": True}])
+    _, content, _ = ks.render_source(reddit_bookmark(), source)
+    assert "Post body" in content
+
+
+def test_post_missing_from_saved_feed_uses_its_own_feed_with_comments():
+    def handler(request):
+        if str(request.url) == SAVED_URL:
+            return httpx.Response(200, text=SAVED_FEED.replace("abc123", "nothere"))
+        assert str(request.url) == POST_URL + ".rss"
+        return httpx.Response(200, text=REDDIT_FEED)
+
+    source = reddit_source(handler, feeds=[{"id": "f1", "name": "Reddit", "url": SAVED_URL, "enabled": True}])
+    _, content, labels = ks.render_source(reddit_bookmark(), source)
     assert '<h2>Post by /u/op</h2><div class="md"><p>Post body</p></div>' in content
     assert "<h3>/u/commenter</h3><p>Nice &amp; useful</p>" in content
-    assert ("fetchedVia", "reddit-rss") in labels
+    assert ("fetchedVia", "reddit-post-feed") in labels
 
 
 def test_reddit_share_link_is_resolved_first():
@@ -244,13 +293,14 @@ def test_reddit_share_link_is_resolved_first():
         return httpx.Response(200, text=REDDIT_FEED)
 
     _, content, _ = ks.render_source(
-        reddit_bookmark("https://www.reddit.com/r/selfhosted/s/clJwh8lJvL"), reddit(handler))
+        reddit_bookmark("https://www.reddit.com/r/selfhosted/s/clJwh8lJvL"), reddit_source(handler))
     assert "Post body" in content
 
 
 def test_reddit_refusal_waits_for_next_run():
-    rd = reddit(lambda request: httpx.Response(403, text="blocked"))
-    assert ks.render_source(reddit_bookmark(), rd) is None
+    source = reddit_source(lambda request: httpx.Response(403, text="blocked"),
+                           feeds=[{"id": "f1", "name": "Reddit", "url": SAVED_URL, "enabled": True}])
+    assert ks.render_source(reddit_bookmark(), source) is None
 
 
 def test_reddit_rate_limit_is_retried_once(monkeypatch):
@@ -263,5 +313,5 @@ def test_reddit_rate_limit_is_retried_once(monkeypatch):
             return httpx.Response(429, headers={"x-ratelimit-reset": "5"})
         return httpx.Response(200, text=REDDIT_FEED)
 
-    _, content, _ = ks.render_source(reddit_bookmark(), reddit(handler))
+    _, content, _ = ks.render_source(reddit_bookmark(), reddit_source(handler))
     assert len(calls) == 2 and "Post body" in content

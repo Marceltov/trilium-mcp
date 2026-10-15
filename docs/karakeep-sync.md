@@ -16,6 +16,13 @@ Each tagged bookmark becomes one text note under the current year's folder in *S
 | Text | The text, as paragraphs | `#karakeepId`, `#sourceUrl` if set |
 | PDF or image | The text Karakeep extracted; the file stays in Karakeep | `#karakeepId`, `#sourceUrl` if set, `#fetchedOn`, `#fetchedVia=karakeep` |
 
+Reddit is a special case: it shows crawlers, Karakeep's included, a cookie and login page instead of the post. For a Reddit link the sync ignores Karakeep's capture and takes the post from Reddit itself:
+
+1. From your private Reddit feeds that Karakeep subscribes to, such as your saved posts (`https://www.reddit.com/saved.rss?feed=…&user=…`, from [reddit.com/prefs/feeds](https://www.reddit.com/prefs/feeds/)). Their key lets them through, and each entry carries the post's text. They hold your most recent saves (about 25), without comments. Labelled `#fetchedVia=reddit-feed`.
+2. Otherwise from the post's own public feed, which adds the comments but allows only about one anonymous request a minute. Labelled `#fetchedVia=reddit-post-feed`.
+
+If Reddit refuses both, the bookmark waits for the next run. Link posts carry only the link, so ingest fetches the linked article itself. To import everything you save on Reddit, add a Karakeep rule that tags bookmarks from the Reddit feed with your import tag.
+
 The bookmark's own note, if you wrote one, is quoted at the top. Images in the article stay links to their original URLs.
 
 After importing, the sync tags the bookmark `trilium-imported`, and skips bookmarks carrying that tag on later runs. A bookmark that already has a note with its `#karakeepId` is never imported twice, even if tagging it failed. Removing `trilium-imported` does not re-import a bookmark while its note exists.
