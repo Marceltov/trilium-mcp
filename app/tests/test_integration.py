@@ -1,6 +1,6 @@
 import asyncio
 
-import httpx
+import httpx2
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
@@ -20,16 +20,16 @@ def test_full_chain_forwards_stripped_token():
     to Trilium's ETAPI, driven through the real ASGI app end-to-end."""
     captured = {}
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         captured["auth"] = request.headers.get("Authorization")
         if request.url.path.endswith("/app-info"):
-            return httpx.Response(200, json=APP_INFO)
-        return httpx.Response(404, json={"status": 404})
+            return httpx2.Response(200, json=APP_INFO)
+        return httpx2.Response(404, json={"status": 404})
 
-    etapi = httpx.AsyncClient(
+    etapi = httpx2.AsyncClient(
         base_url="http://trilium:8080/etapi",
         auth=server.EtapiTokenAuth(),
-        transport=httpx.MockTransport(handler),
+        transport=httpx2.MockTransport(handler),
     )
     mcp = server.build_server(client=etapi)
     inner = mcp.http_app(path=server.DEFAULT_PATH)
@@ -37,8 +37,8 @@ def test_full_chain_forwards_stripped_token():
 
     def factory(**kw):
         kw.pop("transport", None)
-        return httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=wrapped),
+        return httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=wrapped),
             base_url="http://test", **kw,
         )
 

@@ -20,7 +20,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test:
+    # Unit tests plus the live tests against a disposable Trilium (run-tests.sh
+    # starts the docker-compose stack from the committed fixture).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: false
+      # sudo: Trilium's container takes ownership of trilium-data/, so the
+      # runner user couldn't reset the fixture afterwards. setup-uv's cache stays
+      # off: the root run would leave files in it the runner can't prune.
+      - run: sudo -E env "PATH=$PATH" ./run-tests.sh -q
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read

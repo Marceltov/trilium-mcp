@@ -32,8 +32,14 @@ def _login(http: httpx.Client) -> dict:
         "code_challenge": challenge, "code_challenge_method": "S256", "state": "s",
     })
     pending = httpx.URL(r.headers["location"]).params["id"]
+    assert http.post("/login", data={"id": pending, "password": "wrong"}).status_code == 401
     r = http.post("/login", data={"id": pending, "password": PASSWORD})
-    code = httpx.URL(r.headers["location"]).params["code"]
+    back = httpx.URL(r.headers["location"])
+    # RFC 9207: the redirect names the issuer the metadata advertises.
+    meta = http.get("/.well-known/oauth-authorization-server").json()
+    assert meta["authorization_response_iss_parameter_supported"] is True
+    assert back.params["iss"] == meta["issuer"]
+    code = back.params["code"]
     tokens = http.post("/token", data={
         "grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT,
         "client_id": client_id, "code_verifier": verifier,
@@ -68,3 +74,16 @@ def test_refresh_rotates_and_old_access_token_is_rejected():
             "/mcp", json={}, headers={"Authorization": f"Bearer {tokens['access_token']}"}
         )
         assert stale.status_code == 401
+
+
+def test_public_client_can_revoke_and_the_tokens_die():
+    """claude.ai is a public client (no secret); revoking must work for it."""
+    with httpx.Client(base_url=BASE) as http:
+        tokens = _login(http)
+        r = http.post("/revoke", data={"token": tokens["refresh_token"], "client_id": tokens["client_id"]})
+        assert r.status_code == 200
+        stale = http.post("/mcp", json={}, headers={"Authorization": f"Bearer {tokens['access_token']}"})
+        assert stale.status_code == 401
+        again = http.post("/token", data={"grant_type": "refresh_token", "refresh_token": tokens["refresh_token"],
+                                          "client_id": tokens["client_id"]})
+        assert again.status_code in (400, 401)

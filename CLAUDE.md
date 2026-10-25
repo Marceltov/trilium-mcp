@@ -43,6 +43,10 @@ version tags. There are no `:sha` tags — pin an exact build by its immutable `
 digest when needed. `cleanup-packages.yml` weekly prunes orphaned untagged manifests.
 `pages.yml` builds the documentation site from `docs/*.md` (nav in `mkdocs.yml`, Material for MkDocs, `--strict`) and publishes it to GitHub Pages on pushes to `main`. Preview with `uvx --with mkdocs-material --with 'mkdocs<2' mkdocs serve`. User-facing docs live there; the README is only a short intro that links to the site, so document new config/features in `docs/`. `examples/` holds the compose examples (`same-project`: added to Trilium's compose file; `separate-project`: its own project joining Trilium's network) that `docs/compose-examples.md` embeds via `pymdownx.snippets`; validate edits with `docker compose config` after copying the `.env.example` files.
 
+## Testing on the Trilium host
+
+The CT that runs production Trilium publishes 9090/9091 for the real MCP sidecars, so `run-tests.sh` can't bind them there, and a bare `uv run pytest` would point the live tests at production. Run the stack there without host ports, with pytest in the MCP container's network namespace (MCP on 9091 inside it).
+
 ## Test layout
 
 Two kinds of tests, both under `app/tests/`:
@@ -107,7 +111,7 @@ In `token` mode the server holds no secret. The ETAPI token travels per-request 
 Validity is enforced by Trilium when the forwarded request arrives — this server never
 validates the token itself.
 
-`MCP_AUTH_MODE` (`token|oauth|both`) picks the gate; see `resolve_auth_mode` (unset → `both` if `MCP_BASE_URL` + `MCP_OAUTH_SECRET` are set, else `token`) and `wrap_app`. In `oauth`/`both`, `TriliumOAuthProvider` (a FastMCP `OAuthProvider`) replaces `TokenCaptureMiddleware`: its `/login` page trades the Trilium password for an ETAPI token via ETAPI `/auth/login`, issues `tmcp_`-prefixed opaque tokens mapped to it in a Fernet-encrypted `FileTreeStore` at `/data/oauth`, and `verify_token` puts the ETAPI token in the access token's `etapi_token` claim, which `EtapiTokenAuth` reads via `get_access_token()`. In `both`, `BearerPrefixMiddleware` adds `Bearer ` to raw headers (FastMCP only parses Bearer), and a non-`tmcp_` bearer that isn't ours is forwarded as a raw ETAPI token. `MCP_BASE_URL` must be HTTPS or localhost (the SDK's issuer rule), checked in `build_oauth_provider`.
+`MCP_AUTH_MODE` (`token|oauth|both`) picks the gate; see `resolve_auth_mode` (unset → `both` if `MCP_BASE_URL` + `MCP_OAUTH_SECRET` are set, else `token`) and `wrap_app`. In `oauth`/`both`, `build_oauth_provider` returns a `LoginOAuthProvider` from the shared library [mcp-login-oauth](https://github.com/Marceltov/mcp-login-oauth) (pinned by git tag, so the Dockerfile's builder installs git; ADR 0004), which replaces `TokenCaptureMiddleware`. Its `check_login` trades the Trilium password for an ETAPI token via ETAPI `/auth/login`; the library issues `tmcp_`-prefixed opaque tokens mapped to that grant in its Fernet-encrypted store at `/data/oauth` (salt `OAUTH_STORE_SALT`), and `EtapiTokenAuth` reads it from `get_access_token().claims["grant"]["etapi_token"]`. `on_revoke` calls `/auth/logout`. In `both`, the library's `BearerPrefixMiddleware` adds `Bearer ` to raw headers (FastMCP only parses Bearer), and `verify_static` forwards a non-`tmcp_` bearer as a raw ETAPI token. The ETAPI clients are `httpx2` (FastMCP 4's OpenAPI provider deprecates plain `httpx`). `MCP_BASE_URL` must be HTTPS or localhost (the SDK's issuer rule), checked in `build_oauth_provider`.
 
 ### ChatGPT Action
 

@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 import pytest
 from starlette.testclient import TestClient
 
@@ -13,14 +13,14 @@ def chatgpt(monkeypatch):
     monkeypatch.setenv(server.BASE_URL_ENV, "https://mcp.example/")
     seen = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
-        return httpx.Response(200, json={"ok": True})
+        return httpx2.Response(200, json={"ok": True})
 
-    etapi = httpx.AsyncClient(
+    etapi = httpx2.AsyncClient(
         base_url="http://trilium:8080/etapi",
         auth=server.EtapiTokenAuth(),
-        transport=httpx.MockTransport(handler),
+        transport=httpx2.MockTransport(handler),
     )
     app = server.TokenCaptureMiddleware(
         server.build_server(client=etapi).http_app(path=server.DEFAULT_PATH)
