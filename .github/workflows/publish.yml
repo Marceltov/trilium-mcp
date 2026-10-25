@@ -30,8 +30,9 @@ jobs:
         with:
           python-version: "3.12"
       # sudo: Trilium's container takes ownership of trilium-data/, so the
-      # runner user couldn't reset the fixture afterwards.
-      - run: sudo -E env "PATH=$PATH" ./run-tests.sh -q
+      # runner user couldn't reset the fixture afterwards. Own uv cache, so
+      # setup-uv can still prune its cache as the runner user.
+      - run: sudo -E env "PATH=$PATH" UV_CACHE_DIR=/tmp/uv-cache-root ./run-tests.sh -q
 
   publish:
     needs: test
