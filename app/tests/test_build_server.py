@@ -2,7 +2,7 @@ import asyncio
 import io
 import zipfile
 
-import httpx
+import httpx2
 
 import server
 
@@ -15,48 +15,48 @@ def _zip_bytes(files: dict[str, bytes]) -> bytes:
     return buf.getvalue()
 
 
-def _export_client(zip_payload: bytes) -> httpx.AsyncClient:
+def _export_client(zip_payload: bytes) -> httpx2.AsyncClient:
     """Client whose transport returns a binary ZIP for the export endpoint,
     exactly the shape that crashes FastMCP's JSON-decoding tool."""
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith("/export"):
-            return httpx.Response(
+            return httpx2.Response(
                 200, content=zip_payload,
                 headers={"content-type": "application/zip"},
             )
-        return httpx.Response(404, json={"status": 404})
+        return httpx2.Response(404, json={"status": 404})
 
-    return httpx.AsyncClient(
+    return httpx2.AsyncClient(
         base_url="http://trilium:8080/etapi",
         auth=server.EtapiTokenAuth(),
-        transport=httpx.MockTransport(handler),
+        transport=httpx2.MockTransport(handler),
     )
 
 
-def _capture_put_content_client(captured: dict) -> httpx.AsyncClient:
+def _capture_put_content_client(captured: dict) -> httpx2.AsyncClient:
     """Client whose transport records the PUT /content request so we can assert
     the raw body and Content-Type header reach Trilium (they didn't before the
     fix: FastMCP sent a scalar text/plain body with no Content-Type)."""
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith("/content") and request.method == "PUT":
             captured["content_type"] = request.headers.get("content-type")
             captured["body"] = request.content
-            return httpx.Response(204)
-        return httpx.Response(404, json={"status": 404})
+            return httpx2.Response(204)
+        return httpx2.Response(404, json={"status": 404})
 
-    return httpx.AsyncClient(
+    return httpx2.AsyncClient(
         base_url="http://trilium:8080/etapi",
         auth=server.EtapiTokenAuth(),
-        transport=httpx.MockTransport(handler),
+        transport=httpx2.MockTransport(handler),
     )
 
 
 def _mock_client():
-    """An httpx client whose transport fakes Trilium's create-note response,
+    """An httpx2 client whose transport fakes Trilium's create-note response,
     including branch.prefix == null (the field the spec types as string)."""
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith("/create-note"):
-            return httpx.Response(201, json={
+            return httpx2.Response(201, json={
                 "note": {
                     "noteId": "abc123", "isProtected": False, "title": "t",
                     "type": "text", "mime": "text/html", "blobId": "b1",
@@ -75,29 +75,29 @@ def _mock_client():
                     "utcDateModified": "2026-07-08 00:00:00.000Z",
                 },
             })
-        return httpx.Response(404, json={"status": 404})
+        return httpx2.Response(404, json={"status": 404})
 
-    return httpx.AsyncClient(
+    return httpx2.AsyncClient(
         base_url="http://trilium:8080/etapi",
         auth=server.EtapiTokenAuth(),
-        transport=httpx.MockTransport(handler),
+        transport=httpx2.MockTransport(handler),
     )
 
 
-def _content_client(html: bytes) -> httpx.AsyncClient:
+def _content_client(html: bytes) -> httpx2.AsyncClient:
     """Client whose transport returns text/html for the note-content endpoint,
     the shape that tripped the output-schema validation before the fix."""
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith("/content"):
-            return httpx.Response(
+            return httpx2.Response(
                 200, content=html, headers={"content-type": "text/html"},
             )
-        return httpx.Response(404, json={"status": 404})
+        return httpx2.Response(404, json={"status": 404})
 
-    return httpx.AsyncClient(
+    return httpx2.AsyncClient(
         base_url="http://trilium:8080/etapi",
         auth=server.EtapiTokenAuth(),
-        transport=httpx.MockTransport(handler),
+        transport=httpx2.MockTransport(handler),
     )
 
 

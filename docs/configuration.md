@@ -48,7 +48,8 @@ An unset or blank variable sends no instructions, which is the behaviour of earl
 With `MCP_BASE_URL` and `MCP_OAUTH_SECRET` set, clients that support the MCP authorization spec need only the URL. On first connect they open a login page served by this server, you enter your **Trilium Notes password**, and the server mints a dedicated ETAPI token for that client (visible and deletable in Trilium Notes' ETAPI token list).
 
 - The password goes to Trilium Notes once and is never stored.
-- Revoking a client's OAuth token also deletes its ETAPI token in Trilium Notes.
+- Revoking a client's OAuth token also deletes its ETAPI token in Trilium Notes. Public clients such as claude.ai can revoke too.
+- A login link works once, for 10 minutes, and ends after 5 wrong passwords; each wrong password waits a second.
 - Raw ETAPI tokens in the `Authorization` header (with or without `Bearer `) keep working in the default `both` mode.
 - Mount a volume at `/data` (see the [compose examples](compose-examples.md)) so logins survive the container being recreated, for example on an image update.
 

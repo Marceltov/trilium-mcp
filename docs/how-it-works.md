@@ -153,15 +153,15 @@ sequenceDiagram
       F->>A: verify_token(token)
       A->>A: Look up in the<br>mcp-oauth store
       alt Issued by us (tmcp_)
-        A-->>F: etapi_token = mapped token
+        A-->>F: grant = the mapped ETAPI token
       else Not ours, both mode
-        A-->>F: etapi_token = the raw token
+        A-->>F: grant = the raw token
       else Expired or revoked, or oauth mode
         A-->>F: None
         F-->>C: 401, client refreshes or logs in
       end
       F->>H: Call the mapped<br>ETAPI operation
-      H->>H: Read etapi_token<br>from the access token
+      H->>H: Read the ETAPI token<br>from the access token's grant
       H->>T: /etapi/…<br>Authorization: ETAPI token
       T-->>H: JSON
       H-->>F: Response

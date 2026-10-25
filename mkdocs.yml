@@ -32,6 +32,7 @@ nav:
           - OAuth login via the Trilium password: adr/0001-oauth-login-via-trilium-password.md
           - ChatGPT Custom GPT Action proxy: adr/0002-chatgpt-custom-gpt-action-proxy.md
           - Mermaid diagrams: adr/0003-mermaid-diagrams-in-the-docs-site.md
+          - OAuth through mcp-login-oauth: adr/0004-oauth-through-mcp-login-oauth.md
   - Project:
       - Alternatives: alternatives.md
       - Contributing: contributing.md
