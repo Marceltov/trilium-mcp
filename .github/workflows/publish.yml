@@ -29,7 +29,9 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
-      - run: ./run-tests.sh -q
+      # sudo: Trilium's container takes ownership of trilium-data/, so the
+      # runner user couldn't reset the fixture afterwards.
+      - run: sudo -E env "PATH=$PATH" ./run-tests.sh -q
 
   publish:
     needs: test
