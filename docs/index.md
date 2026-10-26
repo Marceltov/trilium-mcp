@@ -7,7 +7,9 @@ hide:
 
     This project is no longer maintained. Trilium Notes 0.106+ ships its own MCP server at `/mcp` (*Options → AI / LLM → MCP server*).
 
-    Want to sign in instead of pasting an ETAPI token? Put [**trilium-mcp-proxy**](https://github.com/Marceltov/trilium-mcp-proxy) in front of it: any MCP client connects by URL, you log in once with your Trilium password, and every request goes unchanged to Trilium's own tools.
+    To connect a client to it directly, create a token under *Options → ETAPI* and put it in the client's MCP configuration as `Authorization: Bearer <token>`.
+
+    For convenience, add [**trilium-mcp-proxy**](https://github.com/Marceltov/trilium-mcp-proxy): it puts an OAuth login in front of the built-in server, so you add the URL to any MCP client and log in once with your Trilium password. You don't have to create, paste or rotate a token, and every request goes unchanged to Trilium's own tools.
 
     The rest of this site describes the server as it was at its last release.
 
