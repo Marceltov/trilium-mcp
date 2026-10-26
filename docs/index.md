@@ -3,6 +3,14 @@ hide:
   - toc
 ---
 
+!!! warning "Archived: use Trilium's built-in MCP server"
+
+    This project is no longer maintained. Trilium Notes 0.106+ ships its own MCP server at `/mcp` (*Options → AI / LLM → MCP server*).
+
+    For OAuth login (claude.ai, the Claude desktop and mobile apps), put [**trilium-mcp-proxy**](https://github.com/Marceltov/trilium-mcp-proxy) in front of it: clients log in once with the Trilium password and every request goes unchanged to Trilium's own tools. Clients that can send a token header (Claude Code) connect to the built-in `/mcp` directly with an ETAPI token.
+
+    The rest of this site describes the server as it was at its last release.
+
 <div class="tm-hero" markdown>
 
 # Your notes in Trilium Notes, as tools for Claude

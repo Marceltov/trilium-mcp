@@ -19,6 +19,26 @@
   </a>
 </p>
 
+> [!WARNING]
+> **This project is archived and no longer maintained.** Trilium Notes 0.106+ ships its own
+> [MCP](https://modelcontextprotocol.io) server at `/mcp` (enable it under
+> *Options → AI / LLM → MCP server*). Use that instead of this sidecar.
+>
+> **Need OAuth login?** Trilium's built-in server only accepts an ETAPI token in the
+> `Authorization` header, which claude.ai and the Claude desktop and mobile apps can't send.
+> Put [**trilium-mcp-proxy**](https://github.com/Marceltov/trilium-mcp-proxy) in front of it:
+> clients log in once with the Trilium password, and every request is forwarded unchanged to
+> Trilium's own tools. The login is [mcp-login-oauth](https://github.com/Marceltov/mcp-login-oauth),
+> the same one this server used.
+>
+> | You want | Use |
+> | --- | --- |
+> | An MCP client that can send a token header (Claude Code) | Trilium's built-in `/mcp` with an ETAPI token |
+> | claude.ai, Claude desktop or mobile, or any OAuth-only client | [trilium-mcp-proxy](https://github.com/Marceltov/trilium-mcp-proxy) in front of the built-in `/mcp` |
+>
+> The image `ghcr.io/marceltov/trilium-mcp` stays available, and the rest of this README
+> describes it as it was at its last release.
+
 A standalone [MCP](https://modelcontextprotocol.io) server that exposes the
 [Trilium](https://triliumnotes.org) [ETAPI](https://github.com/TriliumNext/Trilium)
 (External API) as MCP tools. It runs as a **container sidecar** next to your Trilium
