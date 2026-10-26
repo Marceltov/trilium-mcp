@@ -11,6 +11,8 @@ hide:
 
     For convenience, add [**trilium-mcp-proxy**](https://github.com/Marceltov/trilium-mcp-proxy): it puts an OAuth login in front of the built-in server, so you add the URL to any MCP client and log in once with your Trilium password. You don't have to create, paste or rotate a token, and every request goes unchanged to Trilium's own tools.
 
+    The proxy runs on your own server next to Trilium, and the login page is its own. Your password goes only from your browser to that page and on to your Trilium, which trades it for an ETAPI token; the proxy never stores or logs it. The MCP client (claude.ai included) never sees the password, only opaque OAuth tokens it can't use anywhere but your proxy.
+
     The rest of this site describes the server as it was at its last release.
 
 <div class="tm-hero" markdown>
