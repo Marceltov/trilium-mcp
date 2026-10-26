@@ -3,17 +3,15 @@ hide:
   - toc
 ---
 
-!!! warning "Archived: use Trilium's built-in MCP server"
+!!! warning "Archived: use trilium-mcp-proxy instead"
 
-    This project is no longer maintained. Trilium Notes 0.106+ ships its own MCP server at `/mcp` (*Options → AI / LLM → MCP server*).
+    Trilium Notes 0.106+ has its own MCP server at `/mcp`, so this project is no longer maintained. **[trilium-mcp-proxy](https://trilium-mcp-proxy.marceltov.de/)** puts an OAuth login in front of it: add one URL to any MCP client and log in once with your Trilium password, with no ETAPI token to create or paste.
 
-    To connect a client to it directly, create a token under *Options → ETAPI* and put it in the client's MCP configuration as `Authorization: Bearer <token>`.
+    **Your password never leaves your server:** the proxy runs next to Trilium and its login page is its own, so the password goes only from your browser to the proxy and on to your Trilium. It is never stored or logged, and the MCP client never sees it.
 
-    For convenience, add [**trilium-mcp-proxy**](https://github.com/Marceltov/trilium-mcp-proxy): it puts an OAuth login in front of the built-in server, so you add the URL to any MCP client and log in once with your Trilium password. You don't have to create, paste or rotate a token, and every request goes unchanged to Trilium's own tools.
+    [trilium-mcp-proxy docs](https://trilium-mcp-proxy.marceltov.de/){ .md-button .md-button--primary } [Quick start](https://trilium-mcp-proxy.marceltov.de/getting-started/){ .md-button }
 
-    The proxy runs on your own server next to Trilium, and the login page is its own. Your password goes only from your browser to that page and on to your Trilium, which trades it for an ETAPI token; the proxy never stores or logs it. The MCP client (claude.ai included) never sees the password, only opaque OAuth tokens it can't use anywhere but your proxy.
-
-    The rest of this site describes the server as it was at its last release.
+    Prefer a token? Turn on Trilium's MCP server (*Options → AI / LLM → MCP server*), create a token under *Options → ETAPI* and use it as `Authorization: Bearer <token>`. The rest of this site describes trilium-mcp as it was at its last release.
 
 <div class="tm-hero" markdown>
 
